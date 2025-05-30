@@ -1,0 +1,37 @@
+name: Merchant Dashboard CI
+
+on:
+  push:
+    paths:
+      - 'merchant-webapp/**'
+    branches: [main, dev]
+  pull_request:
+    paths:
+      - 'merchant-webapp/**'
+    branches: [main, dev]
+
+jobs:
+  build-merchant-webapp:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: merchant-webapp
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint code
+        run: npm run lint
+
+      - name: Build app
+        run: npm run build
