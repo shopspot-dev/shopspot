@@ -1,24 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Filter, ArrowUpDown, Trash2, Copy, Search } from 'lucide-react';
+import { Plus, ArrowUpDown, Trash2, Copy, Search } from 'lucide-react';
 import MenuItemCard from '../components/menu/MenuItemCard';
 import MenuItemForm from '../components/menu/MenuItemForm';
 import { menuItems, categories } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
+interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
+  stock_quantity: number;
+  is_available: boolean;
+  category_id: string;
+  dietary_restrictions?: string[];
+  [key: string]: any;
+}
+
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface FilterOptions {
+  availability: 'all' | 'available' | 'unavailable';
+  stockStatus: 'all' | 'inStock' | 'outOfStock';
+  priceRange: 'all';
+  dietary: 'all' | 'vegetarian' | 'vegan' | 'gluten-free';
+}
+
 export default function MenuItems() {
   const { merchant } = useAuth();
-  const [items, setItems] = useState([]);
-  const [categoryList, setCategoryList] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [showForm, setShowForm] = useState(false);
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [selectedItems, setSelectedItems] = useState(new Set());
-  const [sortField, setSortField] = useState('name');
-  const [sortDirection, setSortDirection] = useState('asc');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filters, setFilters] = useState({
+  const [items, setItems] = useState<MenuItem[]>([]);
+  const [categoryList, setCategoryList] = useState<Category[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [showForm, setShowForm] = useState<boolean>(false);
+  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [sortField, setSortField] = useState<'name' | 'price' | 'stock'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filters, setFilters] = useState<FilterOptions>({
     availability: 'all',
     stockStatus: 'all',
     priceRange: 'all',
@@ -35,12 +58,13 @@ export default function MenuItems() {
   }, [merchant?.id]);
 
   const loadData = async () => {
+    if (!merchant?.id) return;
     try {
       setLoading(true);
       setError('');
       const [itemsData, categoriesData] = await Promise.all([
         menuItems.getAll(merchant.id),
-        categories.getAll(merchant.id)
+        categories.getAll(merchant.id),
       ]);
       setItems(itemsData);
       setCategoryList(categoriesData);
@@ -52,7 +76,8 @@ export default function MenuItems() {
     }
   };
 
-  const handleAddItem = async (itemData) => {
+  const handleAddItem = async (itemData: Partial<MenuItem>) => {
+    if (!merchant?.id) return;
     try {
       await menuItems.create({ ...itemData, store_id: merchant.id });
       await loadData();
@@ -63,12 +88,12 @@ export default function MenuItems() {
     }
   };
 
-  const handleEditItem = (item) => {
+  const handleEditItem = (item: MenuItem) => {
     setSelectedItem(item);
     setShowForm(true);
   };
 
-  const handleDeleteItem = async (id) => {
+  const handleDeleteItem = async (id: string) => {
     try {
       await menuItems.delete(id);
       await loadData();
@@ -91,14 +116,15 @@ export default function MenuItems() {
   };
 
   const handleBulkDuplicate = async () => {
+    if (!merchant?.id) return;
     try {
       const selectedItemsData = items.filter(item => selectedItems.has(item.id));
       await Promise.all(selectedItemsData.map(item => {
-        const duplicateItem = {
+        const duplicateItem: Partial<MenuItem> = {
           ...item,
           name: `${item.name} (Copy)`,
           id: undefined,
-          store_id: merchant.id
+          store_id: merchant.id,
         };
         return menuItems.create(duplicateItem);
       }));
@@ -110,7 +136,7 @@ export default function MenuItems() {
     }
   };
 
-  const handleToggleAvailability = async (id, isAvailable) => {
+  const handleToggleAvailability = async (id: string, isAvailable: boolean) => {
     try {
       await menuItems.toggleAvailability(id, isAvailable);
       await loadData();
@@ -120,7 +146,7 @@ export default function MenuItems() {
     }
   };
 
-  const handleSort = (field) => {
+  const handleSort = (field: 'name' | 'price' | 'stock') => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -129,7 +155,7 @@ export default function MenuItems() {
     }
   };
 
-  const handleSelectItem = (id) => {
+  const handleSelectItem = (id: string) => {
     const newSelected = new Set(selectedItems);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -185,7 +211,7 @@ export default function MenuItems() {
   }
 
   return (
-    <div>
+    <div className="p-4">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Menu Items</h1>
@@ -204,13 +230,13 @@ export default function MenuItems() {
           Add New Item
         </button>
       </div>
-
+  
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-md">
           {error}
         </div>
       )}
-
+  
       {/* Search and Filters */}
       <div className="mb-6 space-y-4">
         <div className="flex space-x-4">
@@ -227,7 +253,7 @@ export default function MenuItems() {
           <div className="flex space-x-2">
             <select
               value={filters.availability}
-              onChange={(e) => setFilters({ ...filters, availability: e.target.value })}
+              onChange={(e) => setFilters({ ...filters, availability: e.target.value as FilterOptions['availability'] })}
               className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             >
               <option value="all">All Availability</option>
@@ -236,7 +262,7 @@ export default function MenuItems() {
             </select>
             <select
               value={filters.stockStatus}
-              onChange={(e) => setFilters({ ...filters, stockStatus: e.target.value })}
+              onChange={(e) => setFilters({ ...filters, stockStatus: e.target.value as FilterOptions['stockStatus'] })}
               className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             >
               <option value="all">All Stock</option>
@@ -245,7 +271,7 @@ export default function MenuItems() {
             </select>
             <select
               value={filters.dietary}
-              onChange={(e) => setFilters({ ...filters, dietary: e.target.value })}
+              onChange={(e) => setFilters({ ...filters, dietary: e.target.value as FilterOptions['dietary'] })}
               className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             >
               <option value="all">All Dietary</option>
@@ -255,7 +281,7 @@ export default function MenuItems() {
             </select>
           </div>
         </div>
-
+  
         {/* Category Filter */}
         <div className="flex space-x-2">
           <button
@@ -283,7 +309,7 @@ export default function MenuItems() {
           ))}
         </div>
       </div>
-
+  
       {/* Bulk Actions */}
       {selectedItems.size > 0 && (
         <div className="mb-4 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
@@ -316,44 +342,25 @@ export default function MenuItems() {
           </div>
         </div>
       )}
-
+  
       {/* Sort Controls */}
       <div className="mb-4 flex space-x-4">
-        <button
-          onClick={() => handleSort('name')}
-          className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
-            sortField === 'name'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-gray-300 text-gray-700'
-          }`}
-        >
-          <ArrowUpDown className="h-4 w-4 mr-1" />
-          Name
-        </button>
-        <button
-          onClick={() => handleSort('price')}
-          className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
-            sortField === 'price'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-gray-300 text-gray-700'
-          }`}
-        >
-          <ArrowUpDown className="h-4 w-4 mr-1" />
-          Price
-        </button>
-        <button
-          onClick={() => handleSort('stock')}
-          className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
-            sortField === 'stock'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-gray-300 text-gray-700'
-          }`}
-        >
-          <ArrowUpDown className="h-4 w-4 mr-1" />
-          Stock
-        </button>
+        {(['name', 'price', 'stock'] as const).map((field) => (
+          <button
+            key={field}
+            onClick={() => handleSort(field)}
+            className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
+              sortField === field
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-gray-300 text-gray-700'
+            }`}
+          >
+            <ArrowUpDown className="h-4 w-4 mr-1" />
+            {field[0].toUpperCase() + field.slice(1)}
+          </button>
+        ))}
       </div>
-
+  
       {/* Menu Items Grid */}
       <div className="space-y-4">
         {filteredItems.map((item) => (
@@ -364,7 +371,9 @@ export default function MenuItems() {
             onSelect={() => handleSelectItem(item.id)}
             onEdit={() => handleEditItem(item)}
             onDelete={() => handleDeleteItem(item.id)}
-            onToggleAvailability={() => handleToggleAvailability(item.id, !item.is_available)}
+            onToggleAvailability={() =>
+              handleToggleAvailability(item.id, !item.is_available)
+            }
           />
         ))}
         {filteredItems.length === 0 && (
@@ -373,7 +382,7 @@ export default function MenuItems() {
           </div>
         )}
       </div>
-
+  
       {/* Add/Edit Form Modal */}
       {showForm && (
         <MenuItemForm
@@ -385,4 +394,5 @@ export default function MenuItems() {
       )}
     </div>
   );
+  
 }

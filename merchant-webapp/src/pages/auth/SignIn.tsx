@@ -26,7 +26,7 @@ export default function SignIn() {
       setLoading(true);
       setError('');
 
-      // Sign in with Supabase
+      // Step 1: Sign in via Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password,
@@ -34,32 +34,33 @@ export default function SignIn() {
 
       if (authError) throw authError;
 
-      // Get merchant data
-      const { data: merchantData, error: merchantError } = await supabase
-        .from('merchants')
-        .select(`
-          id,
-          email,
-          stores (
-            id,
-            name
-          )
-        `)
-        .eq('email', credentials.email)
-        .maybeSingle();
+      const user = authData?.user;
+      if (!user) throw new Error('No authenticated user found.');
 
-      if (merchantError) throw merchantError;
+      // Step 2: Fetch user profile from the users table
+      const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id, email, role, store_id, name, status, last_login')
+      .eq('id', user.id)
+      .single();
 
-      if (!merchantData) {
-        throw new Error('Merchant not found');
-      }
+      if (userError || !userData) throw userError || new Error('User record not found');
 
-      // Login with merchant data
+      // Optional: update last_login timestamp
+      await supabase
+        .from('users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', user.id);
+
+      
+      // Step 3: Log in via context or global state
       login({
-        id: merchantData.id,
-        email: merchantData.email,
-        storeName: merchantData.stores?.[0]?.name || 'My Store',
-        createdAt: new Date().toISOString(),
+        id: userData.id,
+        email: userData.email,
+        role: userData.role,
+        storeId: userData.store_id,
+        name: userData.name,
+        status: userData.status,
       });
 
       navigate('/dashboard');

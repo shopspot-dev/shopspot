@@ -20,6 +20,7 @@ export default function StoreSetup() {
   const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [formData, setFormData] = useState({
+    store_id: null as string | null,
     name: '',
     description: '',
     address: '',
@@ -38,19 +39,47 @@ export default function StoreSetup() {
   const loadExistingStore = async () => {
     try {
       setLoading(true);
-      const { data: storeData, error: storeError } = await supabase
-        .from('stores')
-        .select('*')
-        .eq('merchant_id', merchant?.id)
-        .limit(1)
-        .single();
+      setError(''); // Clear previous errors
 
-      if (storeError) {
-        throw storeError;
+      if (!merchant?.id) {
+        console.warn("Merchant ID not available, cannot load store data.");
+        setLoading(false);
+        return;
+      }
+
+      // 1. Find the store_id associated with the current user
+      const { data: storeUserLink, error: storeUserError } = await supabase
+        .from('store_users')
+        .select('store_id')
+        .eq('user_id', merchant.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (storeUserError && storeUserError.code !== 'PGRST116') {
+         throw storeUserError;
+      }
+
+      let storeData = null;
+      if (storeUserLink?.store_id) {
+        // 2. If a store_id is found, fetch the store details
+        const { data: fetchedStoreData, error: storeError } = await supabase
+          .from('stores')
+          .select('*')
+          .eq('id', storeUserLink.store_id)
+          .limit(1)
+          .single();
+
+        if (storeError) {
+          throw storeError;
+        }
+        storeData = fetchedStoreData;
+      } else {
+          console.log("User not linked to any store yet. Ready for new store creation.");
       }
 
       if (storeData) {
         setFormData({
+          store_id: storeData.id,
           name: storeData.name || '',
           description: storeData.description || '',
           address: storeData.address || '',
@@ -59,10 +88,23 @@ export default function StoreSetup() {
           logo_url: storeData.logo_url || '',
           additional_details: storeData.additional_details || '',
         });
+      } else {
+         // Ensure store_id is null if no store is found
+         setFormData(prev => ({ ...prev, store_id: null }));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading store:', err);
-      setError('Failed to load store data');
+      if (err.code === 'PGRST406') {
+           setError('Permission denied to load store data. Check RLS policies.');
+      } else if (err.code) {
+           setError(`Failed to load store data: ${err.message || err.code}`);
+      }
+      else {
+           setError('Failed to load store data');
+      }
+      // Ensure store_id is null on error as well
+      setFormData(prev => ({ ...prev, store_id: null }));
+
     } finally {
       setLoading(false);
     }
@@ -110,7 +152,10 @@ export default function StoreSetup() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!merchant?.id) return;
+    if (!merchant?.id) {
+        setError('User not authenticated.');
+        return;
+    }
 
     // Validate required fields
     if (!formData.name || !formData.address || !formData.phone || !formData.category) {
@@ -128,43 +173,82 @@ export default function StoreSetup() {
       setLoading(true);
       setError('');
 
-      // First check if store exists
-      const { data: existingStore } = await supabase
-        .from('stores')
-        .select('id')
-        .eq('merchant_id', merchant.id)
-        .limit(1)
-        .single();
-
-      const storeData = {
-        merchant_id: merchant.id,
-        ...formData,
+      const storeDetails = {
+        name: formData.name,
+        description: formData.description,
+        address: formData.address,
+        phone: formData.phone,
+        category: formData.category,
+        logo_url: formData.logo_url,
+        additional_details: formData.additional_details,
       };
 
       let result;
-      if (existingStore?.id) {
+      if (formData.store_id) {
         // Update existing store
+        console.log(`Updating store with ID: ${formData.store_id}`);
         result = await supabase
           .from('stores')
-          .update(storeData)
-          .eq('id', existingStore.id)
+          .update(storeDetails)
+          .eq('id', formData.store_id) // Update by store_id
           .select()
           .single();
       } else {
         // Insert new store
+        console.log("Inserting new store...");
+        const newStoreData = {
+            ...storeDetails,
+            owner_id: merchant.id, // Set owner_id on insert
+        };
         result = await supabase
           .from('stores')
-          .insert(storeData)
-          .select()
+          .insert(newStoreData)
+          .select('id') // Select the new store's ID
           .single();
+
+        if (result.error) throw result.error;
+
+        const newStoreId = result.data.id;
+
+        // Link the user to the new store in store_users
+        console.log(`Linking user ${merchant.id} to new store ${newStoreId} in store_users.`);
+        const { error: storeUserInsertError } = await supabase
+            .from('store_users')
+            .insert({
+                user_id: merchant.id,
+                store_id: newStoreId,
+                role: 'owner',
+            });
+
+        if (storeUserInsertError) {
+            // Consider what to do if linking fails after creating store - maybe delete store?
+            console.error("Failed to link user to new store:", storeUserInsertError);
+            // Optionally delete the created store if linking fails to prevent orphaned stores
+            // await supabase.from('stores').delete().eq('id', newStoreId);
+            throw storeUserInsertError; // Propagate error
+        }
+
+        // Update formData with the new store_id so subsequent saves update
+        setFormData(prev => ({ ...prev, store_id: newStoreId }));
       }
 
       if (result.error) throw result.error;
 
       completeStoreSetup();
-    } catch (err) {
+      setError('Store details saved successfully!'); // Optional success message
+
+    } catch (err: any) { // Added : any here for error typing
       console.error('Store setup error:', err);
-      setError('Failed to save store details. Please try again.');
+      if (err.code === '23503') { // Foreign key violation - might indicate owner_id not in users table
+           setError('Failed to save store details: User not found. Please try logging in again.');
+      } else if (err.code === 'PGRST406') { // RLS policy
+           setError('Permission denied to save store details. Check RLS policies.');
+      } else if (err.code) {
+           setError(`Failed to save store details: ${err.message || err.code}`);
+      }
+      else {
+           setError('Failed to save store details. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

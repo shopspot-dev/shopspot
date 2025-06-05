@@ -15,7 +15,9 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // Prevemt default form reload
     e.preventDefault();
+    // Validate passwords
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -48,24 +50,25 @@ export default function SignUp() {
         return;
       }
 
-      // Step 3: Insert merchant record with user_id
-      const { data: merchantData, error: merchantError } = await supabase
-        .from('merchants')
-        .insert({
-          user_id: user.id,      // ✅ required for RLS policy
-          email: formData.email, // optional if also stored in auth.users
-        })
-        .select()
-        .maybeSingle();
-
-      if (merchantError) throw merchantError;
+      // 2. Insert into users table
+      const { error: userInsertError } = await supabase.from('users').insert([
+        {
+          id: user.id,
+          email: formData.email,
+          name: '',
+          //phone,
+          status: 'active',
+        },
+      ]);
+      if (userInsertError) throw userInsertError;
 
       // Step 4: Navigate to store setup
       navigate('/store-setup');
 
-    } catch (err) {
-      console.error('Sign up error:', err);
-      setError('Failed to create account. Please try again.');
+    } catch (err: any) {
+      console.error('Sign up error:', err?.message || err);
+      if (err?.message) setError(err.message);
+      else setError('Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }
