@@ -144,15 +144,18 @@ export default function StoreProfilePage() {
 
       setIsEditing(false);
       setError('Store profile updated successfully!');
+      
+      // Reload the profile data to ensure we have the latest
+      await loadStoreProfile();
     } catch (err: any) {
       console.error('Error updating store profile:', err);
-       if (err.code === 'PGRST406') {
-           setError('Permission denied to update store profile. Check RLS policies.');
-       } else if (err.code) {
-           setError(`Failed to update store profile: ${err.message || err.code}`);
-       } else {
-           setError('Failed to update store profile');
-       }
+      if (err.code === 'PGRST406') {
+        setError('Permission denied to update store profile. Check RLS policies.');
+      } else if (err.code) {
+        setError(`Failed to update store profile: ${err.message || err.code}`);
+      } else {
+        setError('Failed to update store profile');
+      }
     } finally {
       setLoading(false);
     }
@@ -200,24 +203,53 @@ export default function StoreProfilePage() {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Store Profile</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Manage your store's information and settings
-        </p>
+      <div className="mb-8 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Store Profile</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Manage your store's information and settings
+          </p>
+        </div>
+        {!isEditing ? (
+          <button
+            type="button"
+            onClick={() => setIsEditing(true)}
+            className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+          >
+            Edit Profile
+          </button>
+        ) : (
+          <div className="flex space-x-4">
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form="store-profile-form"
+              disabled={loading}
+              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+            >
+              {loading ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
-         profile.store_id && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-md">
-               {error}
-            </div>
-         )
+        profile.store_id && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-md">
+            {error}
+          </div>
+        )
       )}
 
       <div className="bg-white shadow rounded-lg">
         <div className="p-6">
-          <form onSubmit={handleSubmit}>
+          <form id="store-profile-form" onSubmit={handleSubmit}>
             <div className="space-y-6">
               {/* Logo and Basic Info */}
               <div className="flex items-start space-x-6">
@@ -361,36 +393,6 @@ export default function StoreProfilePage() {
                 isEditing={isEditing}
                 onUpdate={handleOpeningHoursUpdate}
               />
-
-              {/* Action Buttons */}
-              <div className="flex justify-end space-x-4">
-                {isEditing ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
-                    >
-                      {loading ? 'Saving...' : 'Save Changes'}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
-                  >
-                    Edit Profile
-                  </button>
-                )}
-              </div>
             </div>
           </form>
         </div>

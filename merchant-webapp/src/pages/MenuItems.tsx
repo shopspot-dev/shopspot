@@ -3,7 +3,7 @@ import { Plus, ArrowUpDown, Trash2, Copy, Search } from 'lucide-react';
 import MenuItemCard from '../components/menu/MenuItemCard';
 import MenuItemForm from '../components/menu/MenuItemForm';
 import { useAuth } from '../contexts/AuthContext';
-import { menuItems, categories, MenuItem, Category } from '../lib/supabase'; // ✅ import properly
+import { menuItems, categories, MenuItem, Category, supabase } from '../lib/supabase'; // ✅ import properly
 
 type AvailabilityOption = 'all' | 'available' | 'unavailable';
 type StockStatusOption = 'all' | 'inStock' | 'outOfStock';
@@ -25,7 +25,7 @@ export default function MenuItems() {
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
-  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<'name' | 'price' | 'stock'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -37,6 +37,7 @@ export default function MenuItems() {
   });
 
   useEffect(() => {
+    console.log("🧪 merchant?.id in useEffect:", merchant?.id);
     if (merchant?.id) {
       loadData();
     } else {
@@ -44,44 +45,126 @@ export default function MenuItems() {
       setLoading(false);
     }
   }, [merchant?.id]);
-
+  
   const loadData = async () => {
     if (!merchant?.id) return;
     try {
       setLoading(true);
       setError('');
+  
+      // ✅ Get actual store_id from store_users
+      const { data: storeUserLink, error: storeUserError } = await supabase
+        .from('store_users')
+        .select('store_id')
+        .eq('user_id', merchant.id)
+        .maybeSingle();
+  
+      if (storeUserError) throw storeUserError;
+      if (!storeUserLink?.store_id) {
+        setError('No store linked to this user.');
+        return;
+      }
+  
+      const storeId = storeUserLink.store_id;
+  
+      console.log("🛒 Corrected storeId for fetching:", storeId);
+  
       const [itemsData, categoriesData] = await Promise.all([
-        menuItems.getAll(merchant.id),
+        menuItems.getAll(storeId),
         categories.getAll()
       ]);
+  
+      console.log("✅ Raw itemsData from Supabase:", itemsData);
+      console.log("✅ Category List:", categoriesData);
+  
       setItems(itemsData);
       setCategoryList(categoriesData);
     } catch (err) {
+      console.error("❌ loadData error:", err);
       setError('Failed to load menu items');
-      console.error('Load error:', err);
     } finally {
       setLoading(false);
     }
   };
+  
+  
 
   const handleAddItem = async (itemData: Partial<MenuItem>) => {
-    if (!merchant?.id) return;
+    if (!merchant?.id) {
+      setError('User not authenticated.');
+      return;
+    }
+  
     try {
-      await menuItems.create({ ...itemData, store_id: merchant?.id });
+      setLoading(true);
+      setError('');
+  
+      // ✅ Step 1: Get store_id linked to the current user
+      const { data: storeUserLink, error: storeUserError } = await supabase
+        .from('store_users')
+        .select('store_id')
+        .eq('user_id', merchant.id)
+        .limit(1)
+        .maybeSingle();
+  
+      if (storeUserError) throw storeUserError;
+      if (!storeUserLink?.store_id) {
+        setError('No store linked to this user. Cannot add item.');
+        return;
+      }
+  
+      const actualStoreId = storeUserLink.store_id;
+  
+      console.log('Item data being sent:', itemData);
+      console.log('Authenticated User ID (merchant.id):', merchant.id);
+      console.log('Actual Store ID to be used:', actualStoreId);
+  
+      // ✅ Step 2: Insert directly with supabase
+      const { error: insertError } = await supabase
+        .from('menu_items')
+        .insert([{ ...itemData, store_id: actualStoreId }]);
+  
+      if (insertError) throw insertError;
+  
       await loadData();
       setShowForm(false);
-    } catch (err) {
-      setError('Failed to add item');
+    } catch (err: any) {
       console.error('Add error:', err);
+      if (err.message) {
+        setError(`Failed to add item: ${err.message}`);
+      } else {
+        setError('Failed to add item. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };  
+
+  const handleEditItem = async (id: string, updates: Partial<MenuItem>) => {
+    try {
+      setLoading(true);
+      setError('');
+  
+      const { error: updateError } = await supabase
+        .from('menu_items')
+        .update(updates)
+        .eq('id', id);
+  
+      if (updateError) throw updateError;
+  
+      await loadData();
+      setShowForm(false);
+      setSelectedItem(null);
+    } catch (err: any) {
+      console.error('Update error:', err);
+      setError('Failed to update item');
+    } finally {
+      setLoading(false);
     }
   };
+  
 
-  const handleEditItem = (item: MenuItem) => {
-    setSelectedItem(item);
-    setShowForm(true);
-  };
-
-  const handleDeleteItem = async (id: number) => {
+  const handleDeleteItem = async (id: string) => {
     try {
       await menuItems.delete(id);
       await loadData();
@@ -106,16 +189,35 @@ export default function MenuItems() {
   const handleBulkDuplicate = async () => {
     if (!merchant?.id) return;
     try {
+      // ✅ Get the actual store_id from store_users
+      const { data: storeUserLink, error: storeUserError } = await supabase
+        .from('store_users')
+        .select('store_id')
+        .eq('user_id', merchant.id)
+        .maybeSingle();
+
+      if (storeUserError) throw storeUserError;
+      if (!storeUserLink?.store_id) {
+        setError('No store linked to this user.');
+        return;
+      }
+
+      const actualStoreId = storeUserLink.store_id;
       const selectedItemsData = items.filter(item => selectedItems.has(item.id));
-      await Promise.all(selectedItemsData.map(item => {
-        const duplicateItem: Partial<MenuItem> = {
-          ...item,
-          name: `${item.name} (Copy)`,
-          id: undefined,
-          store_id: merchant.id
-        };
-        return menuItems.create(duplicateItem);
-      }));
+
+      await Promise.all(
+        selectedItemsData.map(item => {
+          const { category, ...cleanedItem } = item as any; // remove joined field
+          const duplicateItem: Partial<MenuItem> = {
+            ...cleanedItem,
+            id: undefined, // Let Supabase generate a new ID
+            store_id: actualStoreId,
+            name: `${item.name} (Copy)`
+          };
+          return menuItems.create(duplicateItem);
+        })
+      );
+
       await loadData();
       setSelectedItems(new Set());
     } catch (err) {
@@ -124,7 +226,7 @@ export default function MenuItems() {
     }
   };
 
-  const handleToggleAvailability = async (id: number, isAvailable: boolean) => {
+  const handleToggleAvailability = async (id: string, isAvailable: boolean) => {
     try {
       await menuItems.toggleAvailability(id, isAvailable);
       await loadData();
@@ -143,7 +245,7 @@ export default function MenuItems() {
     }
   };
 
-  const handleSelectItem = (id: number) => {
+  const handleSelectItem = (id: string) => {
     const newSelected = new Set(selectedItems);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -200,10 +302,10 @@ export default function MenuItems() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Menu Items</h1>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-gray-600">
             Manage your menu items, prices, and availability
           </p>
         </div>
@@ -212,33 +314,33 @@ export default function MenuItems() {
             setSelectedItem(null);
             setShowForm(true);
           }}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+          className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition-colors"
         >
-          <Plus className="h-5 w-5 mr-2" />
+          <Plus className="h-4 w-4 mr-2" />
           Add New Item
         </button>
       </div>
   
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-md">
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg">
           {error}
         </div>
       )}
   
       {/* Search and Filters */}
       <div className="mb-6 space-y-4">
-        <div className="flex space-x-4">
+        <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search items..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="pl-10 w-full rounded-lg border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
             />
           </div>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap gap-2">
             <select
               value={filters.availability}
               onChange={(e) =>
@@ -247,7 +349,7 @@ export default function MenuItems() {
                   availability: e.target.value as AvailabilityOption,
                 })
               }              
-              className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="rounded-lg border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-1.5 px-3 bg-white"
             >
               <option value="all">All Availability</option>
               <option value="available">Available</option>
@@ -261,7 +363,7 @@ export default function MenuItems() {
                   stockStatus: e.target.value as StockStatusOption,
                 })
               }
-              className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="rounded-lg border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-1.5 px-3 bg-white"
             >
               <option value="all">All Stock</option>
               <option value="inStock">In Stock</option>
@@ -275,7 +377,7 @@ export default function MenuItems() {
                   dietary: e.target.value as DietaryOption,
                 })
               }
-              className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              className="rounded-lg border-gray-200 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm py-1.5 px-3 bg-white"
             >
               <option value="all">All Dietary</option>
               <option value="vegetarian">Vegetarian</option>
@@ -286,13 +388,13 @@ export default function MenuItems() {
         </div>
   
         {/* Category Filter */}
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-full text-sm font-medium ${
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               selectedCategory === 'all'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
             }`}
           >
             All Items
@@ -301,10 +403,10 @@ export default function MenuItems() {
             <button
               key={category.id}
               onClick={() => setSelectedCategory(category.id)}
-              className={`px-4 py-2 rounded-full text-sm font-medium ${
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 selectedCategory === category.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
               }`}
             >
               {category.name}
@@ -315,8 +417,8 @@ export default function MenuItems() {
   
       {/* Bulk Actions */}
       {selectedItems.size > 0 && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+        <div className="mb-4 p-3 bg-white border border-gray-200 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={selectedItems.size === filteredItems.length}
@@ -327,19 +429,19 @@ export default function MenuItems() {
               {selectedItems.size} items selected
             </span>
           </div>
-          <div className="flex space-x-2">
+          <div className="flex gap-2">
             <button
               onClick={handleBulkDuplicate}
-              className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              className="inline-flex items-center px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
             >
-              <Copy className="h-4 w-4 mr-1" />
+              <Copy className="h-4 w-4 mr-1.5" />
               Duplicate
             </button>
             <button
               onClick={handleBulkDelete}
-              className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+              className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
             >
-              <Trash2 className="h-4 w-4 mr-1" />
+              <Trash2 className="h-4 w-4 mr-1.5" />
               Delete
             </button>
           </div>
@@ -347,57 +449,60 @@ export default function MenuItems() {
       )}
   
       {/* Sort Controls */}
-      <div className="mb-4 flex space-x-4">
+      <div className="mb-4 flex flex-wrap gap-2">
         <button
           onClick={() => handleSort('name')}
-          className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
+          className={`inline-flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
             sortField === 'name'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-gray-300 text-gray-700'
+              ? 'border-indigo-600 text-indigo-600 bg-indigo-50'
+              : 'border-gray-200 text-gray-700 bg-white hover:bg-gray-50'
           }`}
         >
-          <ArrowUpDown className="h-4 w-4 mr-1" />
+          <ArrowUpDown className="h-4 w-4 mr-1.5" />
           Name
         </button>
         <button
           onClick={() => handleSort('price')}
-          className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
+          className={`inline-flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
             sortField === 'price'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-gray-300 text-gray-700'
+              ? 'border-indigo-600 text-indigo-600 bg-indigo-50'
+              : 'border-gray-200 text-gray-700 bg-white hover:bg-gray-50'
           }`}
         >
-          <ArrowUpDown className="h-4 w-4 mr-1" />
+          <ArrowUpDown className="h-4 w-4 mr-1.5" />
           Price
         </button>
         <button
           onClick={() => handleSort('stock')}
-          className={`inline-flex items-center px-3 py-1.5 border rounded-md text-sm font-medium ${
+          className={`inline-flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
             sortField === 'stock'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-gray-300 text-gray-700'
+              ? 'border-indigo-600 text-indigo-600 bg-indigo-50'
+              : 'border-gray-200 text-gray-700 bg-white hover:bg-gray-50'
           }`}
         >
-          <ArrowUpDown className="h-4 w-4 mr-1" />
+          <ArrowUpDown className="h-4 w-4 mr-1.5" />
           Stock
         </button>
       </div>
   
       {/* Menu Items Grid */}
-      <div className="space-y-4">
-        {filteredItems.map((item) => (
-          <MenuItemCard
-            key={item.id}
-            item={item}
-            isSelected={selectedItems.has(item.id)}
-            onSelect={() => handleSelectItem(item.id)}
-            onEdit={() => handleEditItem(item)}
-            onDelete={() => handleDeleteItem(item.id)}
-            onToggleAvailability={() => handleToggleAvailability(item.id, !item.is_available)}
-          />
-        ))}
+      <div className="space-y-3">
+      {filteredItems.map((item) => (
+        <MenuItemCard
+          key={item.id} // ✅ this is the fix
+          item={item}
+          isSelected={selectedItems.has(item.id)}
+          onSelect={() => handleSelectItem(item.id)}
+          onEdit={() => {
+            setSelectedItem(item);
+            setShowForm(true);
+          }}
+          onDelete={() => handleDeleteItem(item.id)}
+          onToggleAvailability={() => handleToggleAvailability(item.id, !item.is_available)}
+        />
+      ))}
         {filteredItems.length === 0 && (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 bg-white border border-gray-200 rounded-lg text-gray-500">
             No items found matching your criteria
           </div>
         )}
@@ -408,7 +513,13 @@ export default function MenuItems() {
         <MenuItemForm
           item={selectedItem}
           categories={categoryList}
-          onSubmit={handleAddItem}
+          onSubmit={(data) => {
+            if (selectedItem) {
+              handleEditItem(selectedItem.id, data);
+            } else {
+              handleAddItem(data);
+            }
+          }}
           onCancel={() => setShowForm(false)}
         />
       )}

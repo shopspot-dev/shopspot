@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Store, Upload, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
 
 const STORE_CATEGORIES = [
   'Restaurant',
@@ -29,6 +30,10 @@ export default function StoreSetup() {
     logo_url: '',
     additional_details: '',
   });
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
+  const [showToast, setShowToast] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (merchant?.id) {
@@ -150,25 +155,47 @@ export default function StoreSetup() {
     if (file && file.type.startsWith('image/')) handleLogoUpload(file);
   };
 
+  const validateFields = (data: typeof formData) => {
+    const errors: {[key: string]: string} = {};
+
+    // Price
+    const price = parseFloat(data.price);
+    if (data.price === '' || isNaN(price) || price < 0 || price > 99999999.99 || !/^\d*(\.\d{0,2})?$/.test(data.price)) {
+      errors.price = 'Price must be 0–99,999,999.99 (max 2 decimals)';
+    }
+
+    // Preparation Time
+    const prep = parseInt(data.preparation_time);
+    if (data.preparation_time === '' || isNaN(prep) || prep < 0 || prep > 99999 || !/^\d*$/.test(data.preparation_time)) {
+      errors.preparation_time = 'Preparation time must be 0–99,999 (whole number)';
+    }
+
+    // Stock Quantity
+    const stock = parseInt(data.stock_quantity);
+    if (data.stock_quantity === '' || isNaN(stock) || stock < 0 || stock > 999999 || !/^\d*$/.test(data.stock_quantity)) {
+      errors.stock_quantity = 'Stock quantity must be 0–999,999 (whole number)';
+    }
+
+    return errors;
+  };
+
+  useEffect(() => {
+    setFieldErrors(validateFields(formData));
+  }, [formData]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!merchant?.id) {
-        setError('User not authenticated.');
-        return;
-    }
+    const errors = validateFields(formData);
+    setFieldErrors(errors);
 
-    // Validate required fields
-    if (!formData.name || !formData.address || !formData.phone || !formData.category) {
-      setError('Please fill in all required fields');
+    if (Object.keys(errors).length > 0) {
+      setValidationError('Please fix the highlighted errors before submitting.');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
       return;
     }
 
-    // Validate phone number
-    if (!validatePhone(formData.phone)) {
-      setError('Please enter a valid phone number');
-      return;
-    }
-
+    setValidationError(null);
     try {
       setLoading(true);
       setError('');
@@ -234,20 +261,22 @@ export default function StoreSetup() {
 
       if (result.error) throw result.error;
 
+      // Call completeStoreSetup to update the auth state
       completeStoreSetup();
-      setError('Store details saved successfully!'); // Optional success message
+      
+      // Add navigation here
+      navigate('/dashboard');
 
-    } catch (err: any) { // Added : any here for error typing
+    } catch (err: any) {
       console.error('Store setup error:', err);
-      if (err.code === '23503') { // Foreign key violation - might indicate owner_id not in users table
-           setError('Failed to save store details: User not found. Please try logging in again.');
-      } else if (err.code === 'PGRST406') { // RLS policy
-           setError('Permission denied to save store details. Check RLS policies.');
+      if (err.code === '23503') {
+        setError('Failed to save store details: User not found. Please try logging in again.');
+      } else if (err.code === 'PGRST406') {
+        setError('Permission denied to save store details. Check RLS policies.');
       } else if (err.code) {
-           setError(`Failed to save store details: ${err.message || err.code}`);
-      }
-      else {
-           setError('Failed to save store details. Please try again.');
+        setError(`Failed to save store details: ${err.message || err.code}`);
+      } else {
+        setError('Failed to save store details. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -270,9 +299,19 @@ export default function StoreSetup() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          {showToast && (
+            <div className="fixed top-4 right-4 z-50 bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-2 rounded shadow">
+              Please fix the highlighted errors before submitting.
+            </div>
+          )}
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm">
               {error}
+            </div>
+          )}
+          {validationError && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg">
+              {validationError}
             </div>
           )}
 
@@ -363,6 +402,9 @@ export default function StoreSetup() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 required
               />
+              {fieldErrors.name && (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.name}</div>
+              )}
             </div>
 
             <div>
@@ -380,6 +422,9 @@ export default function StoreSetup() {
                   <option key={category} value={category}>{category}</option>
                 ))}
               </select>
+              {fieldErrors.category && (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.category}</div>
+              )}
             </div>
 
             <div>
@@ -393,6 +438,9 @@ export default function StoreSetup() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 placeholder="Tell customers about your store..."
               />
+              {fieldErrors.description && (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.description}</div>
+              )}
             </div>
 
             <div>
@@ -407,6 +455,9 @@ export default function StoreSetup() {
                 placeholder="123 Main St, City, State, ZIP"
                 required
               />
+              {fieldErrors.address && (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.address}</div>
+              )}
             </div>
 
             <div>
@@ -422,6 +473,9 @@ export default function StoreSetup() {
                 required
               />
               <p className="mt-1 text-xs text-gray-500">Include country code (e.g., +1 for US/Canada)</p>
+              {fieldErrors.phone && (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.phone}</div>
+              )}
             </div>
 
             <div>
@@ -435,6 +489,9 @@ export default function StoreSetup() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 placeholder="Any additional information about your store..."
               />
+              {fieldErrors.additional_details && (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.additional_details}</div>
+              )}
             </div>
 
             <div>

@@ -11,37 +11,39 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
 
 // ========== TYPES ==========
 export interface MenuItem {
-  id: number;
+  id: string; // ← was number before
   name: string;
   price: number;
   stock_quantity: number;
   is_available: boolean;
-  category_id: number;
+  category_id: string;
   dietary_restrictions?: string[];
   store_id: string;
+  image_url?: string;
 }
 
+
 export interface Category {
-  id: number;
+  id: string;
   name: string;
   store_id: string;
 }
 
 export interface Order {
-  id: number;
+  id: string;
   store_id: string;
   status: string;
   [key: string]: any;
 }
 
 export interface User {
-  id: number;
+  id: string;
   store_id: string;
   [key: string]: any;
 }
 
 export interface Settings {
-  id: number;
+  id: string;
   store_id: string;
   [key: string]: any;
 }
@@ -58,12 +60,25 @@ export const menuItems = {
   async getAll(storeId: string) {
     const { data, error } = await supabase
       .from('menu_items')
-      .select(`*, category:categories(name)`)
-      .eq('store_id', storeId);
+      .select(`*`)
+      // .select(`*, category:categories(name)`)
+      .eq('store_id', String(storeId))
 
     if (error) throw error;
     return data as MenuItem[];
   },
+  // async getAll(storeId: string) {
+  //   console.log("📦 Fetching menu_items for storeId:", storeId, "Type:", typeof storeId);
+
+  //   const { data, error } = await supabase
+  //     .from('menu_items')
+  //     .select('*') // ← REMOVE `.category:categories(name)` for now
+  //     .eq('store_id', String(storeId))
+
+  
+  //   if (error) throw error;
+  //   return data as MenuItem[];
+  // },  
 
   async create(item: Partial<MenuItem>) {
     const { data, error } = await supabase
@@ -76,7 +91,7 @@ export const menuItems = {
     return data as MenuItem;
   },
 
-  async update(id: number, updates: Partial<MenuItem>) {
+  async update(id: string, updates: Partial<MenuItem>) {
     const { data, error } = await supabase
       .from('menu_items')
       .update(updates)
@@ -88,7 +103,7 @@ export const menuItems = {
     return data as MenuItem;
   },
 
-  async delete(id: number) {
+  async delete(id: string) {
     const { error } = await supabase
       .from('menu_items')
       .delete()
@@ -97,7 +112,7 @@ export const menuItems = {
     if (error) throw error;
   },
 
-  async toggleAvailability(id: number, isAvailable: boolean) {
+  async toggleAvailability(id: string, isAvailable: boolean) {
     const { data, error } = await supabase
       .from('menu_items')
       .update({ is_available: isAvailable })
@@ -153,7 +168,7 @@ export const orders = {
     return data as Order[];
   },
 
-  async updateStatus(id: number, status: string) {
+  async updateStatus(id: string, status: string) {
     const { data, error } = await supabase
       .from('orders')
       .update({ status, updated_at: new Date().toISOString() })
@@ -188,7 +203,7 @@ export const users = {
     return data as User;
   },
 
-  async update(id: number, updates: Partial<User>) {
+  async update(id: string, updates: Partial<User>) {
     const { data, error } = await supabase
       .from('users')
       .update(updates)

@@ -17,7 +17,7 @@ export interface Merchant {
 interface AuthContextType {
   merchant: Merchant | null;
   storeSetupComplete: boolean;
-  login: (merchantData: Merchant) => Promise<void>;
+  login: (merchantData: Merchant) => Promise<boolean>;
   logout: () => void;
   switchAccount: (accountId: string) => void;
   completeStoreSetup: () => void;
@@ -38,37 +38,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = useCallback(async (merchantData: Merchant) => {
     if (!merchantData?.id) {
       console.error('Invalid merchant data: missing id');
-      return;
+      return false;
     }
 
-    const { data: storeData } = await supabase
-      .from('stores')
-      .select('description, logo_url, address, phone')
-      .eq('merchant_id', merchantData.id)
-      .maybeSingle();
+    // Check if user has a store by looking in store_users table
+    const { data: storeUserData, error: storeUserError } = await supabase
+      .from('store_users')
+      .select('store_id')
+      .eq('user_id', merchantData.id)
+      .single();
 
-    const isSetupComplete = !!(
-      storeData?.description &&
-      storeData?.logo_url &&
-      storeData?.address &&
-      storeData?.phone
-    );
-
-    setStoreSetupComplete(isSetupComplete);
+    const hasStore = !storeUserError && storeUserData?.store_id;
+    setStoreSetupComplete(hasStore);
     setMerchant(merchantData);
-
-    if (isSetupComplete) {
-      navigate('/dashboard');
-    } else {
-      navigate('/store-setup');
-    }
-  }, [navigate]);
+    
+    // Return the store status so the component can decide what to do
+    return hasStore;
+  }, []);
 
   const logout = useCallback(() => {
     setMerchant(null);
     setStoreSetupComplete(false);
-    navigate('/signin');
-  }, [navigate]);
+    // Remove navigation, let the component handle it
+  }, []);
 
   const switchAccount = useCallback((accountId: string) => {
     setMerchant(prev => prev ? {
@@ -80,8 +72,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const completeStoreSetup = useCallback(() => {
     setStoreSetupComplete(true);
-    navigate('/dashboard');
-  }, [navigate]);
+    // Remove navigation, let the component handle it
+  }, []);
 
   const value: AuthContextType = {
     merchant,

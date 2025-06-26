@@ -39,31 +39,42 @@ export default function SignIn() {
 
       // Step 2: Fetch user profile from the users table
       const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, email, role, store_id, name, status, last_login')
-      .eq('id', user.id)
-      .single();
+        .from('users')
+        .select('id, email, role, name, status, last_login')
+        .eq('id', user.id)
+        .maybeSingle();
 
       if (userError || !userData) throw userError || new Error('User record not found');
 
-      // Optional: update last_login timestamp
+      // Step 3: Check if user has a store by looking in store_users table
+      const { data: storeUserData, error: storeUserError } = await supabase
+        .from('store_users')
+        .select('store_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      // Update last_login timestamp
       await supabase
         .from('users')
         .update({ last_login: new Date().toISOString() })
         .eq('id', user.id);
 
-      
-      // Step 3: Log in via context or global state
-      login({
+      // Log in via context and get store status
+      const hasStore = await login({
         id: userData.id,
         email: userData.email,
         role: userData.role,
-        storeId: userData.store_id,
         name: userData.name,
         status: userData.status,
       });
 
-      navigate('/dashboard');
+      // Handle navigation based on store status
+      if (hasStore) {
+        navigate('/dashboard');
+      } else {
+        navigate('/store-setup');
+      }
+
     } catch (err) {
       console.error('Sign in error:', err);
       setError('Invalid email or password');

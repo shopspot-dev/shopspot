@@ -1,51 +1,100 @@
 import React from 'react';
-import { MenuItem } from '../../types';
 import { Edit, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+
+type MenuItem = {
+  image_url: string;
+  name: string;
+  description: string;
+  price: number;
+  stock_quantity: number;
+  preparation_time?: number;
+  tags?: string[];
+  dietary_restrictions?: string[];
+  is_available: boolean;
+};
 
 interface MenuItemCardProps {
   item: MenuItem;
-  onEdit: (item: MenuItem) => void;
-  onDelete: (id: string) => void;
-  onToggleAvailability: (id: string) => void;
+  isSelected: boolean;
+  onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggleAvailability: () => void;
 }
 
 export default function MenuItemCard({
   item,
+  isSelected,
+  onSelect,
   onEdit,
   onDelete,
   onToggleAvailability,
 }: MenuItemCardProps) {
   return (
-    <div className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between">
+    <div className={`bg-white rounded-lg shadow-sm p-6 flex items-center justify-between ${
+      isSelected ? 'ring-2 ring-indigo-500' : ''
+    }`}>
       <div className="flex items-center space-x-4">
-        <img
-          src={item.image}
-          alt={item.name}
-          className="w-16 h-16 rounded-lg object-cover"
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onSelect}
+          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
         />
+        <div className="w-16 h-16 flex items-center justify-center rounded-lg bg-gray-100 overflow-hidden">
+          <img
+            src={item.image_url || '/placeholder.png'}
+            alt={item.name}
+            className="w-full h-full object-cover"
+          />
+        </div>
         <div>
           <h3 className="text-lg font-medium text-gray-900">{item.name}</h3>
           <p className="text-sm text-gray-500">{item.description}</p>
-          <p className="text-sm font-medium text-gray-900 mt-1">${item.price.toFixed(2)}</p>
+          <div className="mt-1 flex items-center space-x-4">
+            <p className="text-sm font-medium text-gray-900">${item.price.toFixed(2)}</p>
+            <span className="text-sm text-gray-500">•</span>
+            <p className="text-sm text-gray-500">Stock: {item.stock_quantity}</p>
+            {item.preparation_time && (
+              <>
+                <span className="text-sm text-gray-500">•</span>
+                <p className="text-sm text-gray-500">{item.preparation_time} mins prep</p>
+              </>
+            )}
+          </div>
+          {(item.tags?.length || 0) > 0 || (item.dietary_restrictions?.length || 0) > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {item.tags?.map(tag => (
+                <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                  {tag}
+                </span>
+              ))}
+              {item.dietary_restrictions?.map(restriction => (
+                <span key={restriction} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                  {restriction}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center space-x-4">
         <button
-          onClick={() => onToggleAvailability(item.id)}
+          onClick={onToggleAvailability}
           className={`p-2 rounded-full ${
-            item.isAvailable ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-50'
+            item.is_available ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-50'
           }`}
         >
-          {item.isAvailable ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
+          {item.is_available ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
         </button>
         <button
-          onClick={() => onEdit(item)}
+          onClick={onEdit}
           className="p-2 text-blue-600 hover:bg-blue-50 rounded-full"
         >
           <Edit className="h-5 w-5" />
         </button>
         <button
-          onClick={() => onDelete(item.id)}
+          onClick={onDelete}
           className="p-2 text-red-600 hover:bg-red-50 rounded-full"
         >
           <Trash2 className="h-5 w-5" />
@@ -53,4 +102,4 @@ export default function MenuItemCard({
       </div>
     </div>
   );
-}
+} 
