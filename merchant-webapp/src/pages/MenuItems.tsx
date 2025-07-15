@@ -35,6 +35,7 @@ export default function MenuItems() {
     priceRange: 'all',
     dietary: 'all',
   });
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
   useEffect(() => {
     console.log("🧪 merchant?.id in useEffect:", merchant?.id);
@@ -142,22 +143,43 @@ export default function MenuItems() {
 
   const handleEditItem = async (id: string, updates: Partial<MenuItem>) => {
     try {
-      setLoading(true);
       setError('');
-  
+      // Find the previous item
+      const prevItem = items.find(item => item.id === id);
+
+      // If stock_quantity is being set
+      if ('stock_quantity' in updates && prevItem) {
+        const newStock = updates.stock_quantity ?? prevItem.stock_quantity;
+        // If going from 0 to >0, set available
+        if (prevItem.stock_quantity === 0 && newStock > 0) {
+          updates.is_available = true;
+        }
+        // If setting to 0, set unavailable
+        if (newStock === 0) {
+          updates.is_available = false;
+        }
+      }
+
       const { error: updateError } = await supabase
         .from('menu_items')
         .update(updates)
         .eq('id', id);
-  
+
       if (updateError) throw updateError;
-  
-      await loadData();
+
+      // Optimistically update local state
+      setItems(prevItems =>
+        prevItems.map(item =>
+          item.id === id ? { ...item, ...updates } : item
+        )
+      );
       setShowForm(false);
       setSelectedItem(null);
     } catch (err: any) {
       console.error('Update error:', err);
       setError('Failed to update item');
+      // Optionally reload if error
+      await loadData();
     } finally {
       setLoading(false);
     }
@@ -167,8 +189,11 @@ export default function MenuItems() {
   const handleDeleteItem = async (id: string) => {
     try {
       await menuItems.delete(id);
-      await loadData();
+      // Remove the deleted item from local state instead of reloading all
+      setItems(prevItems => prevItems.filter(item => item.id !== id));
       setSelectedItems(new Set());
+      setSuccessMessage('Item successfully deleted.');
+      setTimeout(() => setSuccessMessage(''), 3000); // clear after 3s
     } catch (err) {
       setError('Failed to delete item');
       console.error('Delete error:', err);
@@ -180,6 +205,8 @@ export default function MenuItems() {
       await Promise.all(Array.from(selectedItems).map(id => menuItems.delete(id)));
       await loadData();
       setSelectedItems(new Set());
+      setSuccessMessage('Selected items deleted successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000); // Clear message after 3 seconds
     } catch (err) {
       setError('Failed to delete selected items');
       console.error('Bulk delete error:', err);
@@ -220,6 +247,8 @@ export default function MenuItems() {
 
       await loadData();
       setSelectedItems(new Set());
+      setSuccessMessage('Selected items duplicated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000); // Clear message after 3 seconds
     } catch (err) {
       setError('Failed to duplicate selected items');
       console.error('Bulk duplicate error:', err);
@@ -229,10 +258,41 @@ export default function MenuItems() {
   const handleToggleAvailability = async (id: string, isAvailable: boolean) => {
     try {
       await menuItems.toggleAvailability(id, isAvailable);
-      await loadData();
+      // Update the item in local state instead of reloading all
+      setItems(prevItems =>
+        prevItems.map(item =>
+          item.id === id ? { ...item, is_available: isAvailable } : item
+        )
+      );
     } catch (err) {
       setError('Failed to update item availability');
       console.error('Update error:', err);
+      // Optionally reload if error
+      await loadData();
+    }
+  };
+
+  const handleMarkOutOfStock = async (id: string) => {
+    try {
+      setError('');
+      const updates = { stock_quantity: 0, is_available: false };
+      const { error: updateError } = await supabase
+        .from('menu_items')
+        .update(updates)
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+
+      setItems(prevItems =>
+        prevItems.map(item =>
+          item.id === id ? { ...item, ...updates } : item
+        )
+      );
+    } catch (err) {
+      setError('Failed to mark item as out of stock');
+      console.error('Out of stock error:', err);
+      // Optionally reload if error
+      await loadData();
     }
   };
 
@@ -324,6 +384,15 @@ export default function MenuItems() {
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg">
           {error}
+        </div>
+      )}
+
+      {successMessage && (
+        <div
+          className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-green-50 border border-green-200 text-green-700 rounded-lg px-6 py-3 shadow-lg transition-all"
+          style={{ minWidth: 250, maxWidth: 400, textAlign: 'center' }}
+        >
+          {successMessage}
         </div>
       )}
   
@@ -489,7 +558,7 @@ export default function MenuItems() {
       <div className="space-y-3">
       {filteredItems.map((item) => (
         <MenuItemCard
-          key={item.id} // ✅ this is the fix
+          key={item.id}
           item={item}
           isSelected={selectedItems.has(item.id)}
           onSelect={() => handleSelectItem(item.id)}
@@ -499,6 +568,7 @@ export default function MenuItems() {
           }}
           onDelete={() => handleDeleteItem(item.id)}
           onToggleAvailability={() => handleToggleAvailability(item.id, !item.is_available)}
+          onMarkOutOfStock={() => handleMarkOutOfStock(item.id)}
         />
       ))}
         {filteredItems.length === 0 && (

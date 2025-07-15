@@ -57,7 +57,29 @@ export default function MenuItemForm({ item, categories, storeId, onSubmit, onCa
     is_available: item?.is_available ?? true,
   });
 
-  const [images, setImages] = useState<string[]>(item?.images || []);
+  const [images, setImages] = useState<string[]>(
+    item?.images && Array.isArray(item.images)
+      ? item.images
+      : item?.image_url
+        ? [item.image_url]
+        : []
+  );
+
+  // Add this useEffect to update images when editing a new item
+  useEffect(() => {
+    if (item) {
+      setImages(
+        item.images && Array.isArray(item.images)
+          ? item.images
+          : item.image_url
+            ? [item.image_url]
+            : []
+      );
+    } else {
+      setImages([]);
+    }
+  }, [item]);
+
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [categoryList, setCategoryList] = useState<Category[]>([]);
