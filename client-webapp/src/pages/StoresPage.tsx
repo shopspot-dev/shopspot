@@ -1,9 +1,37 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Header from '../components/Header';
 import StoreCard from '../components/StoreCard';
-import { stores } from '../data/mockData';
+import { dataService } from '../services/dataService';
+import { Store } from '../types';
 
 export default function StoresPage() {
+  const [stores, setStores] = useState<Store[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log('[StoresPage] Fetching stores...');
+    dataService.getStores()
+      .then((data) => {
+        console.log('[StoresPage] Stores fetched:', data);
+        setStores(data);
+        if (!data || data.length === 0) {
+          setError('No stores found.');
+        }
+      })
+      .catch((err) => {
+        console.error('[StoresPage] Error fetching stores:', err);
+        setError('Failed to load stores.');
+      })
+      .finally(() => {
+        setLoading(false);
+        console.log('[StoresPage] Loading finished.');
+      });
+  }, []);
+
+  if (loading) return <div>Loading stores...</div>;
+  if (error) return <div className="min-h-screen bg-gray-50"><Header /><div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center text-red-600">{error}</div></div>;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
