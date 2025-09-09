@@ -26,7 +26,7 @@ export default function StoreSetup() {
     description: '',
     address: '',
     phone: '',
-    category: '',
+    category_id: '', // <-- change here
     logo_url: '',
     additional_details: '',
   });
@@ -34,12 +34,25 @@ export default function StoreSetup() {
   const [fieldErrors, setFieldErrors] = useState<{[key: string]: string}>({});
   const [showToast, setShowToast] = useState(false);
   const navigate = useNavigate();
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     if (merchant?.id) {
       loadExistingStore();
     }
   }, [merchant?.id]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      const { data, error } = await supabase.from('categories').select('id, name').order('name');
+      if (error) {
+        console.error('Error fetching categories:', error.message);
+      } else {
+        setCategories(data || []);
+      }
+    };
+    fetchCategories();
+  }, []);
 
   const loadExistingStore = async () => {
     try {
@@ -89,7 +102,7 @@ export default function StoreSetup() {
           description: storeData.description || '',
           address: storeData.address || '',
           phone: storeData.phone || '',
-          category: storeData.category || '',
+          category_id: storeData.category_id || '', // <-- ADD THIS
           logo_url: storeData.logo_url || '',
           additional_details: storeData.additional_details || '',
         });
@@ -158,23 +171,12 @@ export default function StoreSetup() {
   const validateFields = (data: typeof formData) => {
     const errors: {[key: string]: string} = {};
 
-    // Price
-    const price = parseFloat(data.price);
-    if (data.price === '' || isNaN(price) || price < 0 || price > 99999999.99 || !/^\d*(\.\d{0,2})?$/.test(data.price)) {
-      errors.price = 'Price must be 0–99,999,999.99 (max 2 decimals)';
-    }
-
-    // Preparation Time
-    const prep = parseInt(data.preparation_time);
-    if (data.preparation_time === '' || isNaN(prep) || prep < 0 || prep > 99999 || !/^\d*$/.test(data.preparation_time)) {
-      errors.preparation_time = 'Preparation time must be 0–99,999 (whole number)';
-    }
-
-    // Stock Quantity
-    const stock = parseInt(data.stock_quantity);
-    if (data.stock_quantity === '' || isNaN(stock) || stock < 0 || stock > 999999 || !/^\d*$/.test(data.stock_quantity)) {
-      errors.stock_quantity = 'Stock quantity must be 0–999,999 (whole number)';
-    }
+    // Only validate fields that are actually present on this form:
+    if (!data.name) errors.name = "Store name is required.";
+    if (!data.category_id) errors.category_id = "Store category is required.";
+    if (!data.address) errors.address = "Store address is required.";
+    if (!data.phone) errors.phone = "Phone number is required.";
+    // ...add any other relevant validations
 
     return errors;
   };
@@ -205,7 +207,7 @@ export default function StoreSetup() {
         description: formData.description,
         address: formData.address,
         phone: formData.phone,
-        category: formData.category,
+        category_id: formData.category_id, // <-- ADD THIS
         logo_url: formData.logo_url,
         additional_details: formData.additional_details,
       };
@@ -312,6 +314,11 @@ export default function StoreSetup() {
           {validationError && (
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg">
               {validationError}
+              <ul className="mt-2 list-disc list-inside text-red-600 text-sm">
+                {Object.entries(fieldErrors).map(([field, msg]) => (
+                  <li key={field}>{msg}</li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -412,14 +419,16 @@ export default function StoreSetup() {
                 Store Category *
               </label>
               <select
-                value={formData.category}
-                onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                value={formData.category_id}
+                onChange={(e) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 required
               >
                 <option value="">Select a category</option>
-                {STORE_CATEGORIES.map(category => (
-                  <option key={category} value={category}>{category}</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
                 ))}
               </select>
               {fieldErrors.category && (

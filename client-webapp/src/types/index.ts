@@ -10,6 +10,14 @@ export interface Product {
   featured?: boolean;
 }
 
+export interface StoreHour {
+  id: string;
+  store_id: string;
+  day: string;
+  open: string;
+  close: string;
+}
+
 export interface Store {
   id: string;
   name: string;
@@ -26,6 +34,7 @@ export interface Store {
   openingHours?: {
     [key: string]: string;
   };
+  hours?: StoreHour[];
 }
 
 export interface Category {

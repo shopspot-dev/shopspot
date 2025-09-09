@@ -4,6 +4,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import OpeningHours from '../components/profile/OpeningHours';
 
+const STORE_CATEGORIES = [
+  'Restaurant',
+  'Cafe',
+  'Bakery',
+  'Grocery',
+  'Retail',
+  'Electronics',
+  'Fashion',
+  'Other'
+];
+
 export default function StoreProfilePage() {
   const { merchant } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -17,7 +28,7 @@ export default function StoreProfilePage() {
     address: '',
     phone: '',
     email: '',
-    category: '',
+    category_id: '',
     additional_details: '',
     openingHours: {
       monday: { open: '09:00', close: '22:00', isClosed: false },
@@ -29,6 +40,7 @@ export default function StoreProfilePage() {
       sunday: { open: '10:00', close: '21:00', isClosed: false },
     },
   });
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
     if (merchant?.id) {
@@ -38,6 +50,14 @@ export default function StoreProfilePage() {
       setError('User not authenticated.');
     }
   }, [merchant?.id]);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      const { data, error } = await supabase.from('categories').select('id, name').order('name');
+      if (!error && data) setCategories(data);
+    };
+    fetchCategories();
+  }, []);
 
   const loadStoreProfile = async () => {
     try {
@@ -65,7 +85,7 @@ export default function StoreProfilePage() {
       if (storeUserLink?.store_id) {
         const { data: fetchedStoreData, error: storeError } = await supabase
           .from('stores')
-          .select('*')
+          .select('*, categories(name)')
           .eq('id', storeUserLink.store_id)
           .limit(1)
           .single();
@@ -77,7 +97,7 @@ export default function StoreProfilePage() {
       } else {
           console.warn("User not linked to any store. Cannot load profile.");
           setError('No store found for this user. Please complete store setup first.');
-          setProfile(prev => ({ ...prev, store_id: null, name: '', description: '', logo_url: '', address: '', phone: '', email: '', category: '', additional_details: '' }));
+          setProfile(prev => ({ ...prev, store_id: null, name: '', description: '', logo_url: '', address: '', phone: '', email: '', category_id: '', additional_details: '' }));
       }
 
       if (storeData) {
@@ -90,8 +110,14 @@ export default function StoreProfilePage() {
           address: storeData.address || '',
           phone: storeData.phone || '',
           email: storeData.email || '',
-          category: storeData.category || '',
+          category_id: storeData.category_id || '',
           additional_details: storeData.additional_details || '',
+        }));
+        // Fetch or initialize store hours
+        const openingHours = await fetchOrInitStoreHours(storeData.id);
+        setProfile(prev => ({
+          ...prev,
+          openingHours,
         }));
       }
     } catch (err: any) {
@@ -135,12 +161,33 @@ export default function StoreProfilePage() {
           address: profile.address,
           phone: profile.phone,
           email: profile.email,
-          category: profile.category,
+          category_id: profile.category_id,
           additional_details: profile.additional_details,
         })
         .eq('id', profile.store_id);
 
       if (updateError) throw updateError;
+
+      // Upsert opening hours for each day
+      const openingHoursArray = Object.entries(profile.openingHours).map(([day, hours]) => ({
+        store_id: profile.store_id,
+        day_of_week: day,
+        open_time: hours.isClosed ? null : hours.open,
+        close_time: hours.isClosed ? null : hours.close,
+        is_closed: hours.isClosed,
+      }));
+
+      console.log("Upserting store_hours for store_id:", profile.store_id, "as user:", merchant?.id);
+      console.log(openingHoursArray);
+      console.log(profile.store_id, merchant?.id);
+
+      const { error: hoursError } = await supabase
+        .from('store_hours')
+        .upsert(openingHoursArray, { onConflict: 'store_id,day_of_week' });
+
+      if (hoursError) {
+        throw hoursError;
+      }
 
       setIsEditing(false);
       setError('Store profile updated successfully!');
@@ -294,15 +341,28 @@ export default function StoreProfilePage() {
                       <label className="block text-sm font-medium text-gray-700">
                         Category
                       </label>
-                      <input
-                        type="text"
-                        value={profile.category}
-                        onChange={(e) =>
-                          setProfile({ ...profile, category: e.target.value })
-                        }
-                        disabled={!isEditing}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      />
+                      {isEditing ? (
+                        <select
+                          value={profile.category_id || ''}
+                          onChange={(e) =>
+                            setProfile({ ...profile, category_id: e.target.value })
+                          }
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          required
+                        >
+                          <option value="">Select a category</option>
+                          {categories.map(cat => (
+                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={categories.find(cat => cat.id === profile.category_id)?.name || ''}
+                          disabled
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -399,4 +459,54 @@ export default function StoreProfilePage() {
       </div>
     </div>
   );
+}
+
+const DEFAULT_HOURS = {
+  monday:    { open: '09:00', close: '22:00', isClosed: false },
+  tuesday:   { open: '09:00', close: '22:00', isClosed: false },
+  wednesday: { open: '09:00', close: '22:00', isClosed: false },
+  thursday:  { open: '09:00', close: '22:00', isClosed: false },
+  friday:    { open: '09:00', close: '23:00', isClosed: false },
+  saturday:  { open: '10:00', close: '23:00', isClosed: false },
+  sunday:    { open: '10:00', close: '21:00', isClosed: false },
+};
+
+async function fetchOrInitStoreHours(store_id: string) {
+  const { data, error } = await supabase
+    .from('store_hours')
+    .select('*')
+    .eq('store_id', store_id);
+
+  if (error) throw error;
+
+  if (!data || data.length === 0) {
+    // Prepare default rows
+    const defaultRows = Object.entries(DEFAULT_HOURS).map(([day, hours]) => ({
+      store_id,
+      day_of_week: day,
+      open_time: hours.open,
+      close_time: hours.close,
+      is_closed: hours.isClosed,
+    }));
+    await supabase.from('store_hours').insert(defaultRows);
+
+    // Return the default hours
+    return DEFAULT_HOURS;
+  }
+
+  // Build openingHours from DB, fallback to default if missing
+  const openingHours: typeof DEFAULT_HOURS = {} as any;
+  Object.entries(DEFAULT_HOURS).forEach(([day, defaultHours]) => {
+    const row = data.find(r => r.day_of_week === day);
+    if (row) {
+      openingHours[day] = {
+        open: row.open_time,
+        close: row.close_time,
+        isClosed: row.is_closed,
+      };
+    } else {
+      openingHours[day] = defaultHours;
+    }
+  });
+  return openingHours;
 }

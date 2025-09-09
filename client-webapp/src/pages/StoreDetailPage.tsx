@@ -1,45 +1,74 @@
-import React, { useMemo } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { MapPin, Star, Clock } from 'lucide-react';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import StoreCategoryList from '../components/StoreCategoryList';
 import ProductCard from '../components/ProductCard';
-import MapView from '../components/ui/Map';
-import { stores, products, categories } from '../data/mockData';
-import { StoreCategory } from '../types';
+// import MapView from '../components/ui/Map';
+import { dataService } from '../services/dataService';
+import { Store, StoreCategory } from '../types';
 
 export default function StoreDetailPage() {
   const { id } = useParams();
-  const store = stores.find(s => s.id === id);
-  const storeProducts = products.filter(p => p.storeId === id);
+  const [store, setStore] = useState<Store | null>(null);
+  const [hours, setHours] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
 
-  const storeCategories = useMemo(() => {
-    if (!store) return [];
 
-    return store.categories.map(categoryId => {
-      const category = categories.find(c => c.id === categoryId);
-      const productCount = storeProducts.filter(p => p.category === categoryId).length;
-      
-      return {
-        ...category!,
-        productCount,
-        storeId: store.id,
-      };
-    }) as StoreCategory[];
-  }, [store, storeProducts]);
+  useEffect(() => {
+    if (!id) return;
 
-  if (!store) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="max-w-7xl mx-auto px-4 py-12 text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Store not found</h1>
-        </div>
-        <Footer />
-      </div>
-    );
-  }
+    async function fetchStoreData() {
+      try {
+        const storeData = await dataService.getStoreById(id);
+        const menuItems = await dataService.getMenuItemsByStore(id);
+
+        if (!storeData) {
+          setError("Store not found");
+          return;
+        }
+        setStore(storeData);
+        setProducts(menuItems);
+
+        console.log("STORE DATA:", storeData);
+
+
+        // ✅ Fetch store hours from store_hours table
+        const hoursData = await dataService.getStoreHours(id);
+        const hoursMap: Record<string, string> = {};
+        hoursData.forEach((h: { day: string; open: string; close: string }) => {
+          hoursMap[h.day] = `${h.open} - ${h.close}`;
+        });
+        setHours(hoursMap);
+      } catch (err) {
+        setError("Store not found");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchStoreData();
+  }, [id]);
+
+
+  if (loading) return <div>Loading store...</div>;
+  if (error || !store) return <div className="min-h-screen bg-gray-50"><Header /><div className="max-w-7xl mx-auto px-4 py-12 text-center text-red-600">{error || 'Store not found'}</div><Footer /></div>;
+
+  const storeProducts = products;
+
+  // Convert store.categories (array of IDs or objects) into objects with product counts
+  const storeCategories = (store.categories || []).map((category) => ({
+    id: category.id,
+    name: category.name,
+    icon: category.icon || "",
+    image: category.image || "",
+    productCount: storeProducts.filter((p) => p.category === category.id).length,
+    storeId: store.id,
+  }));
+  
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -112,16 +141,21 @@ export default function StoreDetailPage() {
                     <Clock className="h-5 w-5 text-gray-400 mt-1" />
                     <div className="ml-3">
                       <p className="text-sm font-medium text-gray-900">Hours</p>
-                      {store.openingHours ? (
-                        Object.entries(store.openingHours).map(([day, hours]) => (
+                      {Object.keys(hours).length > 0 ? (
+                        ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
                           <p key={day} className="text-sm text-gray-500">
-                            {day}: {hours}
+                            {day}: {hours[day] || "Closed"}
                           </p>
                         ))
                       ) : (
                         <>
-                          <p className="text-sm text-gray-500">Mon-Sat: 9AM-9PM</p>
-                          <p className="text-sm text-gray-500">Sun: 10AM-6PM</p>
+                          <p className="text-sm text-gray-500">Monday: 9:00 AM - 9:00 PM</p>
+                          <p className="text-sm text-gray-500">Tuesday: 9:00 AM - 9:00 PM</p>
+                          <p className="text-sm text-gray-500">Wednesday: 9:00 AM - 9:00 PM</p>
+                          <p className="text-sm text-gray-500">Thursday: 9:00 AM - 9:00 PM</p>
+                          <p className="text-sm text-gray-500">Friday: 9:00 AM - 10:00 PM</p>
+                          <p className="text-sm text-gray-500">Saturday: 10:00 AM - 10:00 PM</p>
+                          <p className="text-sm text-gray-500">Sunday: 10:00 AM - 6:00 PM</p>
                         </>
                       )}
                     </div>
@@ -129,9 +163,9 @@ export default function StoreDetailPage() {
                 </div>
 
                 {/* Map */}
-                <div className="mt-6 h-64 rounded-lg overflow-hidden">
+                {/*<div className="mt-6 h-64 rounded-lg overflow-hidden">
                   <MapView location={store.location} />
-                </div>
+                </div>*/}
               </div>
             </div>
           </div>
