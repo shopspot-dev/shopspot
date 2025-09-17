@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { products as mockProducts } from '../data/mockData';
 import { Product } from '../types';
-
+import { format, parse } from "date-fns";
+ 
 export const dataService = {
   async getStores(): Promise<any[]> { // Changed return type to any[] as Store type is removed
     try {
@@ -28,7 +29,7 @@ export const dataService = {
       return mockStores;
     }
   },
-
+ 
   async getMenuItems(): Promise<Product[]> {
     try {
       const { data, error } = await supabase.from('menu_items').select('*');
@@ -51,16 +52,16 @@ export const dataService = {
       return []; // Return empty array as mockProducts is removed
     }
   },
-
+ 
   async getMenuItemsByStore(storeId: string): Promise<Product[]> {
     try {
       const { data, error } = await supabase
         .from("menu_items")
         .select("*")
         .eq("store_id", storeId);
-  
+ 
       if (error || !data) throw error;
-  
+ 
       return data.map((item: any) => ({
         id: item.id,
         name: item.name,
@@ -83,7 +84,7 @@ export const dataService = {
       return [];
     }
   },  
-
+ 
   async getStoreById(id: string) {
     try {
       // 1️⃣ Fetch the store data
@@ -92,9 +93,9 @@ export const dataService = {
       .select("*")
       .eq("id", id)
       .single();
-
+ 
       if (storeError || !storeData) throw storeError;
-
+ 
       // 2️⃣ Fetch the category details
       let categories: any[] = [];
       if (storeData.category_id) {
@@ -103,7 +104,7 @@ export const dataService = {
           .select("*")
           .eq("id", storeData.category_id)
           .single();
-
+ 
         if (!categoryError && categoryData) {
           categories = [
             {
@@ -115,6 +116,10 @@ export const dataService = {
           ];
         }
       }
+ 
+      // 3️⃣ Fetch store hours
+      const openingHours = await dataService.getStoreHours(storeData.id);
+     
       // 3️⃣ Return a store object with categories included
       return {
         id: storeData.id,
@@ -131,14 +136,14 @@ export const dataService = {
         categories, // ✅ Now contains [{ id, name, image }]
         rating: 4.5,
         featured: false,
-        openingHours: {},
+        openingHours,
       };
     } catch (e) {
       console.warn("Falling back to mock store:", e);
       return null;
     }
   },
-
+ 
   async getMenuItemById(id: string) {
     try {
       const { data, error } = await supabase.from('menu_items').select('*').eq('id', id).single();
@@ -160,19 +165,104 @@ export const dataService = {
       return null;
     }
   },
-
+ 
   getStoreHours: async (storeId: string) => {
+    console.log("🔍 Fetching store hours for storeId:", storeId);
+    
     const { data, error } = await supabase
       .from("store_hours")
-      .select("*")
+      .select("day_of_week, open_time, close_time, is_closed")
       .eq("store_id", storeId);
-  
+
+    console.log("📊 Raw Supabase response:", { data, error });
+
     if (error) {
-      console.error("Error fetching store hours:", error.message);
+      console.error("❌ Error fetching store hours:", error.message);
+      console.error("❌ Full error object:", error);
       return [];
     }
-  
-    return data || [];
+
+    if (!data || data.length === 0) {
+      console.warn("⚠️ No store hours data found for storeId:", storeId);
+      return [];
+    }
+
+    console.log("✅ Found store hours data:", data);
+
+    const DAYS = [
+      "Monday", "Tuesday", "Wednesday",
+      "Thursday", "Friday", "Saturday", "Sunday",
+    ];
+
+    const formatTime = (t: string | null) => {
+      if (!t) return "";
+      const [h, m] = t.split(":").map(Number);
+      const date = new Date();
+      date.setHours(h, m);
+      return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    };
+
+    const map: Record<string, { open: string; close: string }> = {};
+
+    (data || []).forEach((row: any) => {
+      const day =
+        row.day_of_week.charAt(0).toUpperCase() +
+        row.day_of_week.slice(1).toLowerCase();
+
+      // ✅ explicitly check boolean
+      if (row.is_closed === true) {
+        map[day] = { open: "Closed", close: "" };
+      } else {
+        map[day] = {
+          open: formatTime(row.open_time),
+          close: formatTime(row.close_time),
+        };
+      }
+
+      console.log("Row from DB:", row.day_of_week, "is_closed:", row.is_closed);
+    });
+
+    const result = DAYS.map((day) => ({
+      day,
+      open: map[day]?.open || "Closed",
+      close: map[day]?.close || "",
+    }));
+
+    console.log("🎯 Final processed hours:", result);
+    return result;
   },
-  
+ 
+  // Add this temporary function to test database access
+  testDatabaseAccess: async () => {
+    console.log("🧪 Testing database access...");
+    
+    // Test 1: Can we access stores table?
+    const { data: stores, error: storesError } = await supabase
+      .from("stores")
+      .select("id, name")
+      .limit(1);
+    
+    console.log("Stores table access:", { stores, storesError });
+    
+    // Test 2: Can we access store_hours table?
+    const { data: hours, error: hoursError } = await supabase
+      .from("store_hours")
+      .select("*")
+      .limit(1);
+    
+    console.log("Store hours table access:", { hours, hoursError });
+    
+    // Test 3: Try to get hours for a specific store
+    if (stores && stores.length > 0) {
+      const storeId = stores[0].id;
+      console.log("Testing hours for store:", storeId);
+      
+      const { data: storeHours, error: storeHoursError } = await supabase
+        .from("store_hours")
+        .select("*")
+        .eq("store_id", storeId);
+      
+      console.log("Store hours for specific store:", { storeHours, storeHoursError });
+    }
+  }
 };
