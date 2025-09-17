@@ -58,14 +58,7 @@ export default function StoreDetailPage() {
   const storeProducts = products;
  
   // Convert store.categories (array of IDs or objects) into objects with product counts
-  const storeCategories = (store.categories || []).map((category) => ({
-    id: category.id,
-    name: category.name,
-    icon: category.icon || "",
-    image: category.image || "",
-    productCount: storeProducts.filter((p) => p.category === category.id).length,
-    storeId: store.id,
-  }));
+  const storeCategories = store.categories || [];
  
  
   return (

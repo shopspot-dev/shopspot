@@ -96,44 +96,24 @@ export const dataService = {
  
       if (storeError || !storeData) throw storeError;
  
-      // 2️⃣ Fetch the category details
-      let categories: any[] = [];
-      if (storeData.category_id) {
-        const { data: categoryData, error: categoryError } = await supabase
-          .from("categories")
-          .select("*")
-          .eq("id", storeData.category_id)
-          .single();
- 
-        if (!categoryError && categoryData) {
-          categories = [
-            {
-              id: categoryData.id,
-              name: categoryData.name,
-              image: categoryData.image_url || "",
-              icon: categoryData.icon || "",
-            },
-          ];
-        }
-      }
- 
+      // 2️⃣ Fetch categories based on products (not store category_id)
+      const categories = await this.getStoreCategoriesByProducts(storeData.id);
+
       // 3️⃣ Fetch store hours
-      const openingHours = await dataService.getStoreHours(storeData.id);
+      const openingHours = await this.getStoreHours(storeData.id);
      
-      // 3️⃣ Return a store object with categories included
+      // 4️⃣ Return a store object with categories included
       return {
         id: storeData.id,
         name: storeData.name,
         description: storeData.description || "",
-        image:
-          storeData.logo_url ||
-          "https://images.unsplash.com/photo-1441986300917-64674bd600d8",
+        image: storeData.logo_url || "https://images.unsplash.com/photo-1441986300917-64674bd600d8",
         location: {
           lat: 0,
           lng: 0,
           address: storeData.address || "No address",
         },
-        categories, // ✅ Now contains [{ id, name, image }]
+        categories, // ✅ Now contains ALL categories with products
         rating: 4.5,
         featured: false,
         openingHours,
@@ -263,6 +243,40 @@ export const dataService = {
         .eq("store_id", storeId);
       
       console.log("Store hours for specific store:", { storeHours, storeHoursError });
+    }
+  },
+
+  // Add this new function to get categories by store products
+  async getStoreCategoriesByProducts(storeId: string): Promise<any[]> { // Assuming StoreCategory type is not defined, using 'any' for now
+    try {
+      // First get all products for this store
+      const products = await this.getMenuItemsByStore(storeId);
+      
+      // Get unique category IDs from products
+      const categoryIds = [...new Set(products.map(p => p.category))];
+      
+      if (categoryIds.length === 0) return [];
+      
+      // Fetch category details for all unique category IDs
+      const { data: categoriesData, error } = await supabase
+        .from('categories')
+        .select('*')
+        .in('id', categoryIds);
+      
+      if (error || !categoriesData) return [];
+      
+      // Transform to StoreCategory with product counts
+      return categoriesData.map((category: any) => ({
+        id: category.id,
+        name: category.name,
+        icon: category.icon || '',
+        image: category.image_url || '',
+        productCount: products.filter(p => p.category === category.id).length,
+        storeId: storeId,
+      }));
+    } catch (error) {
+      console.error('Error fetching store categories by products:', error);
+      return [];
     }
   }
 };
