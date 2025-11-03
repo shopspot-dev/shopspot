@@ -46,34 +46,24 @@ export default function SignIn() {
 
       if (userError || !userData) throw userError || new Error('User record not found');
 
-      // Step 3: Check if user has a store by looking in store_users table
-      const { data: storeUserData, error: storeUserError } = await supabase
-        .from('store_users')
-        .select('store_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
       // Update last_login timestamp
       await supabase
         .from('users')
         .update({ last_login: new Date().toISOString() })
         .eq('id', user.id);
 
-      // Log in via context and get store status
-      const hasStore = await login({
+      // Step 3: Log in via context (this will fetch stores)
+      const hasStores = await login({
         id: userData.id,
         email: userData.email,
         role: userData.role,
         name: userData.name,
         status: userData.status,
+        stores: [] // Will be populated by login function
       });
 
-      // Handle navigation based on store status
-      if (hasStore) {
-        navigate('/dashboard');
-      } else {
-        navigate('/store-setup');
-      }
+      // Always go to store selection page
+      navigate('/store-selection');
 
     } catch (err) {
       console.error('Sign in error:', err);

@@ -17,7 +17,7 @@ interface FilterOptions {
 }
 
 export default function MenuItems() {
-  const { merchant } = useAuth();
+  const { currentStore } = useAuth(); // ✅ Use currentStore
   const [items, setItems] = useState<MenuItem[]>([]);
   const [categoryList, setCategoryList] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | 'all'>('all');
@@ -38,46 +38,26 @@ export default function MenuItems() {
   const [successMessage, setSuccessMessage] = useState<string>('');
 
   useEffect(() => {
-    console.log("🧪 merchant?.id in useEffect:", merchant?.id);
-    if (merchant?.id) {
+    if (currentStore?.id) {
       loadData();
     } else {
       setError('No store selected');
       setLoading(false);
     }
-  }, [merchant?.id]);
+  }, [currentStore?.id]); // ✅ Reload when store changes
   
   const loadData = async () => {
-    if (!merchant?.id) return;
+    if (!currentStore?.id) return;
+    
     try {
       setLoading(true);
       setError('');
-  
-      // ✅ Get actual store_id from store_users
-      const { data: storeUserLink, error: storeUserError } = await supabase
-        .from('store_users')
-        .select('store_id')
-        .eq('user_id', merchant.id)
-        .maybeSingle();
-  
-      if (storeUserError) throw storeUserError;
-      if (!storeUserLink?.store_id) {
-        setError('No store linked to this user.');
-        return;
-      }
-  
-      const storeId = storeUserLink.store_id;
-  
-      console.log("🛒 Corrected storeId for fetching:", storeId);
-  
+      
       const [itemsData, categoriesData] = await Promise.all([
-        menuItems.getAll(storeId),
+        menuItems.getAll(currentStore.id), // ✅ Use currentStore.id
         categories.getAll()
       ]);
-  
-      console.log("✅ Raw itemsData from Supabase:", itemsData);
-      console.log("✅ Category List:", categoriesData);
-  
+      
       setItems(itemsData);
       setCategoryList(categoriesData);
     } catch (err) {
@@ -91,51 +71,24 @@ export default function MenuItems() {
   
 
   const handleAddItem = async (itemData: Partial<MenuItem>) => {
-    if (!merchant?.id) {
-      setError('User not authenticated.');
+    if (!currentStore?.id) {
+      setError('No store selected');
       return;
     }
-  
+    
     try {
       setLoading(true);
-      setError('');
-  
-      // ✅ Step 1: Get store_id linked to the current user
-      const { data: storeUserLink, error: storeUserError } = await supabase
-        .from('store_users')
-        .select('store_id')
-        .eq('user_id', merchant.id)
-        .limit(1)
-        .maybeSingle();
-  
-      if (storeUserError) throw storeUserError;
-      if (!storeUserLink?.store_id) {
-        setError('No store linked to this user. Cannot add item.');
-        return;
-      }
-  
-      const actualStoreId = storeUserLink.store_id;
-  
-      console.log('Item data being sent:', itemData);
-      console.log('Authenticated User ID (merchant.id):', merchant.id);
-      console.log('Actual Store ID to be used:', actualStoreId);
-  
-      // ✅ Step 2: Insert directly with supabase
-      const { error: insertError } = await supabase
+      
+      const { error } = await supabase
         .from('menu_items')
-        .insert([{ ...itemData, store_id: actualStoreId }]);
-  
-      if (insertError) throw insertError;
-  
+        .insert([{ ...itemData, store_id: currentStore.id }]);
+
+      if (error) throw error;
+      
       await loadData();
       setShowForm(false);
     } catch (err: any) {
-      console.error('Add error:', err);
-      if (err.message) {
-        setError(`Failed to add item: ${err.message}`);
-      } else {
-        setError('Failed to add item. Please try again.');
-      }
+      setError(err.message || 'Failed to add item');
     } finally {
       setLoading(false);
     }
@@ -214,13 +167,13 @@ export default function MenuItems() {
   };
 
   const handleBulkDuplicate = async () => {
-    if (!merchant?.id) return;
+    if (!currentStore?.id) return;
     try {
       // ✅ Get the actual store_id from store_users
       const { data: storeUserLink, error: storeUserError } = await supabase
         .from('store_users')
         .select('store_id')
-        .eq('user_id', merchant.id)
+        .eq('user_id', currentStore.id)
         .maybeSingle();
 
       if (storeUserError) throw storeUserError;
@@ -349,7 +302,7 @@ export default function MenuItems() {
     );
   }
 
-  if (!merchant?.id) {
+  if (!currentStore?.id) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center text-gray-600">

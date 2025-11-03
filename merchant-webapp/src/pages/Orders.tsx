@@ -1,51 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Order } from '../types';
 import OrderCard from '../components/orders/OrderCard';
-
-const SAMPLE_ORDERS: Order[] = [
-  {
-    id: '1001',
-    customerName: 'John Smith',
-    customerEmail: 'john@example.com',
-    items: [
-      { id: '1', name: 'Classic Burger', quantity: 2, price: 12.99 },
-      { id: '2', name: 'French Fries', quantity: 1, price: 4.99 },
-    ],
-    total: 30.97,
-    status: 'pending',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: '1002',
-    customerName: 'Sarah Johnson',
-    customerEmail: 'sarah@example.com',
-    items: [
-      { id: '3', name: 'Caesar Salad', quantity: 1, price: 9.99 },
-      { id: '4', name: 'Iced Tea', quantity: 2, price: 2.99 },
-    ],
-    total: 15.97,
-    status: 'preparing',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
+import { useAuth } from '../contexts/AuthContext';
+import { orders } from '../lib/supabase';
 
 export default function Orders() {
-  const [orders, setOrders] = useState<Order[]>(SAMPLE_ORDERS);
+  const { currentStore } = useAuth(); // ✅ Use currentStore
+  const [ordersList, setOrdersList] = useState<Order[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const handleUpdateStatus = (orderId: string, newStatus: Order['status']) => {
-    setOrders(orders.map(order =>
-      order.id === orderId
-        ? { ...order, status: newStatus, updatedAt: new Date().toISOString() }
-        : order
-    ));
+  useEffect(() => {
+    if (currentStore?.id) {
+      loadOrders();
+    } else {
+      setLoading(false);
+    }
+  }, [currentStore?.id]); // ✅ Reload when store changes
+
+  const loadOrders = async () => {
+    if (!currentStore?.id) return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      const data = await orders.getAll(currentStore.id); // ✅ Use helper
+      setOrdersList(data);
+    } catch (err) {
+      console.error('Error loading orders:', err);
+      setError('Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const handleUpdateStatus = async (orderId: string, newStatus: Order['status']) => {
+    try {
+      await orders.updateStatus(orderId, newStatus); // ✅ Use helper
+      await loadOrders(); // Reload to refresh UI
+    } catch (err) {
+      console.error('Error updating order:', err);
+      setError('Failed to update order status');
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Loading orders...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center py-8 text-red-600">{error}</div>;
+  }
+
   const filteredOrders = selectedStatus === 'all'
-    ? orders
-    : orders.filter(order => order.status === selectedStatus);
+    ? ordersList
+    : ordersList.filter(order => order.status === selectedStatus);
 
   return (
     <div>
@@ -56,7 +67,6 @@ export default function Orders() {
         </p>
       </div>
 
-      {/* Order Status Filter */}
       <div className="mb-6">
         <div className="flex space-x-2">
           {['all', 'pending', 'preparing', 'ready', 'delivered', 'cancelled'].map(status => (
@@ -75,15 +85,20 @@ export default function Orders() {
         </div>
       </div>
 
-      {/* Orders List */}
       <div className="space-y-4">
-        {filteredOrders.map(order => (
-          <OrderCard
-            key={order.id}
-            order={order}
-            onUpdateStatus={handleUpdateStatus}
-          />
-        ))}
+        {filteredOrders.length === 0 ? (
+          <div className="text-center py-12 text-gray-500">
+            No orders found
+          </div>
+        ) : (
+          filteredOrders.map(order => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              onUpdateStatus={handleUpdateStatus}
+            />
+          ))
+        )}
       </div>
     </div>
   );

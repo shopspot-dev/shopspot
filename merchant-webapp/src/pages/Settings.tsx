@@ -1,29 +1,86 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StoreSettings } from '../types';
 import SettingsSection from '../components/settings/SettingsSection';
 import { Bell, Clock, DollarSign, Globe } from 'lucide-react';
-
-const INITIAL_SETTINGS: StoreSettings = {
-  notifications: {
-    email: true,
-    push: true,
-    sms: false,
-  },
-  autoAcceptOrders: false,
-  preparationTime: 20,
-  taxRate: 8.5,
-  currency: 'USD',
-};
+import { useAuth } from '../contexts/AuthContext';
+import { settings as settingsAPI } from '../lib/supabase';
 
 export default function Settings() {
-  const [settings, setSettings] = useState<StoreSettings>(INITIAL_SETTINGS);
+  const { currentStore } = useAuth(); // ✅ Use currentStore
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>({
+    notifications: { email: true, push: true, sms: false },
+    autoAcceptOrders: false,
+    preparationTime: 20,
+    taxRate: 8.5,
+    currency: 'USD',
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (currentStore?.id) {
+      loadSettings();
+    } else {
+      setLoading(false);
+    }
+  }, [currentStore?.id]); // ✅ Reload when store changes
+
+  const loadSettings = async () => {
+    if (!currentStore?.id) return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      const data = await settingsAPI.get(currentStore.id); // ✅ Use helper
+      
+      if (data) {
+        // Map database settings to UI format
+        setStoreSettings({
+          notifications: {
+            email: data.email_notifications || true,
+            push: data.push_notifications || true,
+            sms: data.sms_notifications || false,
+          },
+          autoAcceptOrders: data.auto_accept_orders || false,
+          preparationTime: data.preparation_time || 20,
+          taxRate: data.tax_rate || 8.5,
+          currency: data.currency || 'USD',
+        });
+      }
+    } catch (err) {
+      console.error('Error loading settings:', err);
+      setError('Failed to load settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!currentStore?.id) return;
+    
+    try {
+      await settingsAPI.update(currentStore.id, {
+        email_notifications: storeSettings.notifications.email,
+        push_notifications: storeSettings.notifications.push,
+        sms_notifications: storeSettings.notifications.sms,
+        auto_accept_orders: storeSettings.autoAcceptOrders,
+        preparation_time: storeSettings.preparationTime,
+        tax_rate: storeSettings.taxRate,
+        currency: storeSettings.currency,
+      });
+      // Show success message
+    } catch (err) {
+      setError('Failed to save settings');
+    }
+  };
 
   const handleNotificationChange = (type: keyof StoreSettings['notifications']) => {
-    setSettings({
-      ...settings,
+    setStoreSettings({
+      ...storeSettings,
       notifications: {
-        ...settings.notifications,
-        [type]: !settings.notifications[type],
+        ...storeSettings.notifications,
+        [type]: !storeSettings.notifications[type],
       },
     });
   };
@@ -55,11 +112,11 @@ export default function Settings() {
                 <button
                   onClick={() => handleNotificationChange('email')}
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                    settings.notifications.email ? 'bg-indigo-600' : 'bg-gray-200'
+                    storeSettings.notifications.email ? 'bg-indigo-600' : 'bg-gray-200'
                   }`}
                 >
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    settings.notifications.email ? 'translate-x-5' : 'translate-x-0'
+                    storeSettings.notifications.email ? 'translate-x-5' : 'translate-x-0'
                   }`} />
                 </button>
               </div>
@@ -75,11 +132,11 @@ export default function Settings() {
                 <button
                   onClick={() => handleNotificationChange('push')}
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                    settings.notifications.push ? 'bg-indigo-600' : 'bg-gray-200'
+                    storeSettings.notifications.push ? 'bg-indigo-600' : 'bg-gray-200'
                   }`}
                 >
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    settings.notifications.push ? 'translate-x-5' : 'translate-x-0'
+                    storeSettings.notifications.push ? 'translate-x-5' : 'translate-x-0'
                   }`} />
                 </button>
               </div>
@@ -95,11 +152,11 @@ export default function Settings() {
                 <button
                   onClick={() => handleNotificationChange('sms')}
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                    settings.notifications.sms ? 'bg-indigo-600' : 'bg-gray-200'
+                    storeSettings.notifications.sms ? 'bg-indigo-600' : 'bg-gray-200'
                   }`}
                 >
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    settings.notifications.sms ? 'translate-x-5' : 'translate-x-0'
+                    storeSettings.notifications.sms ? 'translate-x-5' : 'translate-x-0'
                   }`} />
                 </button>
               </div>
@@ -120,13 +177,13 @@ export default function Settings() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setSettings({ ...settings, autoAcceptOrders: !settings.autoAcceptOrders })}
+                  onClick={() => setStoreSettings({ ...storeSettings, autoAcceptOrders: !storeSettings.autoAcceptOrders })}
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
-                    settings.autoAcceptOrders ? 'bg-indigo-600' : 'bg-gray-200'
+                    storeSettings.autoAcceptOrders ? 'bg-indigo-600' : 'bg-gray-200'
                   }`}
                 >
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    settings.autoAcceptOrders ? 'translate-x-5' : 'translate-x-0'
+                    storeSettings.autoAcceptOrders ? 'translate-x-5' : 'translate-x-0'
                   }`} />
                 </button>
               </div>
@@ -137,8 +194,8 @@ export default function Settings() {
                 </label>
                 <input
                   type="number"
-                  value={settings.preparationTime}
-                  onChange={(e) => setSettings({ ...settings, preparationTime: parseInt(e.target.value) })}
+                  value={storeSettings.preparationTime}
+                  onChange={(e) => setStoreSettings({ ...storeSettings, preparationTime: parseInt(e.target.value) })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
               </div>
@@ -157,8 +214,8 @@ export default function Settings() {
                 <input
                   type="number"
                   step="0.1"
-                  value={settings.taxRate}
-                  onChange={(e) => setSettings({ ...settings, taxRate: parseFloat(e.target.value) })}
+                  value={storeSettings.taxRate}
+                  onChange={(e) => setStoreSettings({ ...storeSettings, taxRate: parseFloat(e.target.value) })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 />
               </div>
@@ -168,8 +225,8 @@ export default function Settings() {
                   Currency
                 </label>
                 <select
-                  value={settings.currency}
-                  onChange={(e) => setSettings({ ...settings, currency: e.target.value })}
+                  value={storeSettings.currency}
+                  onChange={(e) => setStoreSettings({ ...storeSettings, currency: e.target.value })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 >
                   <option value="USD">USD ($)</option>

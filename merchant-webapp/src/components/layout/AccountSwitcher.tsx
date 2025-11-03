@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { ChevronDown, LogOut, Store, UserCircle, SwitchCamera } from 'lucide-react';
+import { ChevronDown, LogOut, Store, SwitchCamera } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useOnClickOutside } from '../../hooks/useOnClickOutside';
+import { useNavigate } from 'react-router-dom';
 
 export default function AccountSwitcher() {
-  const { merchant, logout, switchAccount } = useAuth();
+  const { merchant, currentStore, logout, switchStore } = useAuth();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -13,13 +15,24 @@ export default function AccountSwitcher() {
   const handleLogout = () => {
     setIsOpen(false);
     logout();
+    navigate('/signin');
   };
 
-  const accounts = [
-    { id: '1', name: merchant?.storeName || 'Current Store' },
-    { id: '2', name: 'Second Store' },
-    { id: '3', name: 'Third Store' },
-  ];
+  const handleSwitchStore = () => {
+    setIsOpen(false);
+    navigate('/store-selection');
+  };
+
+  const handleStoreSelect = async (storeId: string) => {
+    setIsOpen(false);
+    await switchStore(storeId);
+    // Refresh the page to load new store data
+    window.location.reload();
+  };
+
+  if (!merchant || !currentStore) {
+    return null;
+  }
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -31,8 +44,8 @@ export default function AccountSwitcher() {
           <Store className="w-5 h-5 text-indigo-600" />
         </div>
         <div className="hidden md:block text-left">
-          <p className="text-sm font-medium text-gray-700">{merchant?.storeName}</p>
-          <p className="text-xs text-gray-500">{merchant?.email}</p>
+          <p className="text-sm font-medium text-gray-700">{currentStore.name}</p>
+          <p className="text-xs text-gray-500">{merchant.email}</p>
         </div>
         <ChevronDown className="w-4 h-4 text-gray-500" />
       </button>
@@ -41,22 +54,22 @@ export default function AccountSwitcher() {
         <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50">
           <div className="px-4 py-2 border-b border-gray-100">
             <p className="text-sm font-medium text-gray-900">Account Settings</p>
-            <p className="text-xs text-gray-500">{merchant?.email}</p>
+            <p className="text-xs text-gray-500">{merchant.email}</p>
           </div>
 
+          {/* Store List */}
           <div className="py-1">
-            {accounts.map((account) => (
+            {merchant.stores.map((store) => (
               <button
-                key={account.id}
-                onClick={() => {
-                  switchAccount(account.id);
-                  setIsOpen(false);
-                }}
-                className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center"
+                key={store.id}
+                onClick={() => handleStoreSelect(store.id)}
+                className={`w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center ${
+                  store.id === currentStore.id ? 'bg-indigo-50' : ''
+                }`}
               >
                 <Store className="w-4 h-4 mr-2 text-gray-400" />
-                {account.name}
-                {account.id === merchant?.id && (
+                {store.name}
+                {store.id === currentStore.id && (
                   <span className="ml-auto text-xs text-indigo-600">Current</span>
                 )}
               </button>
@@ -65,24 +78,11 @@ export default function AccountSwitcher() {
 
           <div className="border-t border-gray-100">
             <button
-              onClick={() => {
-                setIsOpen(false);
-                // Navigate to profile or settings
-              }}
-              className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center"
-            >
-              <UserCircle className="w-4 h-4 mr-2 text-gray-400" />
-              Profile Settings
-            </button>
-            <button
-              onClick={() => {
-                setIsOpen(false);
-                // Navigate to account switching page
-              }}
+              onClick={handleSwitchStore}
               className="w-full px-4 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 flex items-center"
             >
               <SwitchCamera className="w-4 h-4 mr-2 text-gray-400" />
-              Switch Account
+              Switch Store
             </button>
             <button
               onClick={handleLogout}

@@ -1,47 +1,74 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserPlus } from 'lucide-react';
 import { StoreUser } from '../types/users';
 import UserList from '../components/users/UserList';
 import UserForm from '../components/users/UserForm';
-
-const SAMPLE_USERS: StoreUser[] = [
-  {
-    id: '1',
-    name: 'John Smith',
-    email: 'john@example.com',
-    role: 'admin',
-    createdAt: '2024-01-01T00:00:00Z',
-    lastLogin: '2024-03-10T15:30:00Z',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'Sarah Johnson',
-    email: 'sarah@example.com',
-    role: 'staff',
-    createdAt: '2024-02-01T00:00:00Z',
-    lastLogin: '2024-03-09T10:15:00Z',
-    status: 'active',
-  },
-];
+import { useAuth } from '../contexts/AuthContext';
+import { users } from '../lib/supabase';
 
 export default function Users() {
-  const [users, setUsers] = useState<StoreUser[]>(SAMPLE_USERS);
+  const { currentStore } = useAuth(); // ✅ Use currentStore
+  const [usersList, setUsersList] = useState<StoreUser[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [selectedUser, setSelectedUser] = useState<StoreUser | undefined>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const handleAddUser = (userData: Partial<StoreUser>) => {
-    const newUser: StoreUser = {
-      id: Date.now().toString(),
-      name: userData.name!,
-      email: userData.email!,
-      role: userData.role!,
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-      status: 'active',
-    };
-    setUsers([...users, newUser]);
-    setShowForm(false);
+  useEffect(() => {
+    if (currentStore?.id) {
+      loadUsers();
+    } else {
+      setLoading(false);
+    }
+  }, [currentStore?.id]); // ✅ Reload when store changes
+
+  const loadUsers = async () => {
+    if (!currentStore?.id) return;
+    
+    try {
+      setLoading(true);
+      setError('');
+      
+      const data = await users.getAll(currentStore.id); // ✅ Use helper
+      // Transform data to match StoreUser interface
+      const transformed = data.map(u => ({
+        id: u.id,
+        name: u.name || '',
+        email: u.email || '',
+        role: u.role || 'staff',
+        createdAt: u.created_at || '',
+        lastLogin: u.last_login || '',
+        status: u.status || 'active',
+      }));
+      setUsersList(transformed);
+    } catch (err) {
+      console.error('Error loading users:', err);
+      setError('Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddUser = async (userData: Partial<StoreUser>) => {
+    if (!currentStore?.id) {
+      setError('No store selected');
+      return;
+    }
+    
+    try {
+      await users.create({
+        name: userData.name!,
+        email: userData.email!,
+        role: userData.role!,
+        store_id: currentStore.id,
+        status: 'active',
+      });
+      
+      await loadUsers();
+      setShowForm(false);
+    } catch (err) {
+      setError('Failed to add user');
+    }
   };
 
   const handleEditUser = (user: StoreUser) => {
@@ -50,7 +77,7 @@ export default function Users() {
   };
 
   const handleDeactivateUser = (userId: string) => {
-    setUsers(users.map(user =>
+    setUsersList(usersList.map(user =>
       user.id === userId
         ? { ...user, status: user.status === 'active' ? 'inactive' : 'active' }
         : user
@@ -90,7 +117,7 @@ export default function Users() {
         </div>
       ) : (
         <UserList
-          users={users}
+          users={usersList}
           onEditUser={handleEditUser}
           onDeactivateUser={handleDeactivateUser}
         />

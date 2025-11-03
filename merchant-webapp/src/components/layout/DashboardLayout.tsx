@@ -2,12 +2,9 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import TopBar from './TopBar';
 import Sidebar from './Sidebar';
-import StoreSetupOverlay from '../StoreSetupOverlay';
-import { useAuth } from '../../contexts/AuthContext';
 
 export default function DashboardLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { storeSetupComplete } = useAuth();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -39,9 +36,6 @@ export default function DashboardLayout() {
           </main>
         </div>
       </div>
-
-      {/* Store Setup Overlay */}
-      {!storeSetupComplete && <StoreSetupOverlay />}
     </div>
   );
 }

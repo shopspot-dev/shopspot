@@ -16,7 +16,7 @@ const STORE_CATEGORIES = [
 ];
 
 export default function StoreProfilePage() {
-  const { merchant } = useAuth();
+  const { currentStore } = useAuth(); // ✅ Use currentStore
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -43,13 +43,13 @@ export default function StoreProfilePage() {
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    if (merchant?.id) {
+    if (currentStore?.id) {
       loadStoreProfile();
     } else {
       setLoading(false);
-      setError('User not authenticated.');
+      setError('No store selected');
     }
-  }, [merchant?.id]);
+  }, [currentStore?.id]); // ✅ Watch for store changes
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -60,45 +60,20 @@ export default function StoreProfilePage() {
   }, []);
 
   const loadStoreProfile = async () => {
+    if (!currentStore?.id) return;
+    
     try {
       setLoading(true);
       setError('');
 
-      if (!merchant?.id) {
-        console.warn("Merchant ID not available, cannot load store profile.");
-        setLoading(false);
-        return;
-      }
+      // ✅ Fetch directly using currentStore.id
+      const { data: storeData, error } = await supabase
+        .from('stores')
+        .select('*, categories(name)')
+        .eq('id', currentStore.id)
+        .single();
 
-      const { data: storeUserLink, error: storeUserError } = await supabase
-        .from('store_users')
-        .select('store_id')
-        .eq('user_id', merchant.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (storeUserError && storeUserError.code !== 'PGRST116') {
-         throw storeUserError;
-      }
-
-      let storeData = null;
-      if (storeUserLink?.store_id) {
-        const { data: fetchedStoreData, error: storeError } = await supabase
-          .from('stores')
-          .select('*, categories(name)')
-          .eq('id', storeUserLink.store_id)
-          .limit(1)
-          .single();
-
-        if (storeError) {
-          throw storeError;
-        }
-        storeData = fetchedStoreData;
-      } else {
-          console.warn("User not linked to any store. Cannot load profile.");
-          setError('No store found for this user. Please complete store setup first.');
-          setProfile(prev => ({ ...prev, store_id: null, name: '', description: '', logo_url: '', address: '', phone: '', email: '', category_id: '', additional_details: '' }));
-      }
+      if (error) throw error;
 
       if (storeData) {
         setProfile(prev => ({
@@ -113,23 +88,12 @@ export default function StoreProfilePage() {
           category_id: storeData.category_id || '',
           additional_details: storeData.additional_details || '',
         }));
-        // Fetch or initialize store hours
         const openingHours = await fetchOrInitStoreHours(storeData.id);
-        setProfile(prev => ({
-          ...prev,
-          openingHours,
-        }));
+        setProfile(prev => ({ ...prev, openingHours }));
       }
     } catch (err: any) {
       console.error('Error loading store profile:', err);
-      if (err.code === 'PGRST406') {
-           setError('Permission denied to load store profile. Check RLS policies.');
-      } else if (err.code) {
-           setError(`Failed to load store profile: ${err.message || err.code}`);
-      }
-      else {
-           setError('Failed to load store profile');
-      }
+      setError('Failed to load store profile');
       setProfile(prev => ({ ...prev, store_id: null }));
     } finally {
       setLoading(false);
@@ -138,8 +102,8 @@ export default function StoreProfilePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!merchant?.id) {
-      setError('User not authenticated.');
+    if (!currentStore?.id) {
+      setError('No store selected');
       return;
     }
     if (!profile.store_id) {
@@ -177,9 +141,9 @@ export default function StoreProfilePage() {
         is_closed: hours.isClosed,
       }));
 
-      console.log("Upserting store_hours for store_id:", profile.store_id, "as user:", merchant?.id);
+      console.log("Upserting store_hours for store_id:", profile.store_id, "as user:", currentStore?.id);
       console.log(openingHoursArray);
-      console.log(profile.store_id, merchant?.id);
+      console.log(profile.store_id, currentStore?.id);
 
       const { error: hoursError } = await supabase
         .from('store_hours')

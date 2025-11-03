@@ -12,6 +12,7 @@ import Users from './pages/Users';
 import SignIn from './pages/auth/SignIn';
 import SignUp from './pages/auth/SignUp';
 import StoreSetup from './pages/StoreSetup';
+import StoreSelection from './pages/StoreSelection';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 
 export default function App() {
@@ -23,6 +24,15 @@ export default function App() {
           <Route path="/" element={<Navigate to="/signin" replace />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUp />} />
+          
+          {/* Store Selection Route */}
+          <Route path="/store-selection" element={
+            <ProtectedRoute>
+              <StoreSelection />
+            </ProtectedRoute>
+          } />
+          
+          {/* Store Setup Route */}
           <Route path="/store-setup" element={
             <ProtectedRoute>
               <StoreSetup />

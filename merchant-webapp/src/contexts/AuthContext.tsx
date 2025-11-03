@@ -8,20 +8,41 @@ import React, {
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
-// Define merchant type (you can expand this based on your Supabase schema)
+export interface Store {
+  id: string;
+  name: string;
+  description?: string;
+  logo_url?: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  category?: string;
+  additional_details?: string;
+  category_id?: string;
+  role: string; // owner, admin, staff
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Merchant {
   id: string;
-  [key: string]: any;
+  email: string;
+  name?: string;
+  role?: string;
+  status?: string;
+  stores: Store[];
+  currentStoreId?: string;
 }
 
 interface AuthContextType {
   merchant: Merchant | null;
-  storeSetupComplete: boolean;
+  currentStore: Store | null;
   login: (merchantData: Merchant) => Promise<boolean>;
   logout: () => void;
-  switchAccount: (accountId: string) => void;
-  completeStoreSetup: () => void;
+  switchStore: (storeId: string) => Promise<void>;
   isAuthenticated: boolean;
+  refreshStores: () => Promise<void>;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,7 +54,32 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const navigate = useNavigate();
   const [merchant, setMerchant] = useState<Merchant | null>(null);
-  const [storeSetupComplete, setStoreSetupComplete] = useState(false);
+  const [currentStore, setCurrentStore] = useState<Store | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchUserStores = useCallback(async (userId: string): Promise<Store[]> => {
+    setLoading(true);
+    try {
+      // Get stores where user is owner
+      const { data: stores, error } = await supabase
+        .from('stores')
+        .select('*')
+        .eq('owner_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Add role as 'owner' for all stores
+      const storesWithRole = stores?.map(store => ({ ...store, role: 'owner' })) || [];
+
+      return storesWithRole;
+    } catch (error) {
+      console.error('Error fetching user stores:', error);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const login = useCallback(async (merchantData: Merchant) => {
     if (!merchantData?.id) {
@@ -41,48 +87,73 @@ export function AuthProvider({ children }: AuthProviderProps) {
       return false;
     }
 
-    // Check if user has a store by looking in store_users table
-    const { data: storeUserData, error: storeUserError } = await supabase
-      .from('store_users')
-      .select('store_id')
-      .eq('user_id', merchantData.id)
-      .single();
+    try {
+      // Fetch user's stores
+      const stores = await fetchUserStores(merchantData.id);
+      
+      const updatedMerchant = {
+        ...merchantData,
+        stores,
+        currentStoreId: stores.length > 0 ? stores[0].id : undefined
+      };
 
-    const hasStore = !storeUserError && storeUserData?.store_id;
-    setStoreSetupComplete(hasStore);
-    setMerchant(merchantData);
-    
-    // Return the store status so the component can decide what to do
-    return hasStore;
-  }, []);
+      setMerchant(updatedMerchant);
+      setCurrentStore(stores.length > 0 ? stores[0] : null);
+      
+      return stores.length > 0;
+    } catch (error) {
+      console.error('Error during login:', error);
+      return false;
+    }
+  }, [fetchUserStores]);
+
+  const switchStore = useCallback(async (storeId: string) => {
+    if (!merchant) return;
+
+    const store = merchant.stores.find(s => s.id === storeId);
+    if (!store) {
+      console.error('Store not found');
+      return;
+    }
+
+    setCurrentStore(store);
+    setMerchant(prev => prev ? { ...prev, currentStoreId: storeId } : null);
+  }, [merchant]);
+
+  const refreshStores = useCallback(async () => {
+    if (!merchant) return;
+
+    try {
+      const stores = await fetchUserStores(merchant.id);
+      setMerchant(prev => prev ? { ...prev, stores } : null);
+      
+      // If current store is no longer available, switch to first available
+      if (currentStore && !stores.find(s => s.id === currentStore.id)) {
+        if (stores.length > 0) {
+          await switchStore(stores[0].id);
+        } else {
+          setCurrentStore(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing stores:', error);
+    }
+  }, [merchant, currentStore, switchStore, fetchUserStores]);
 
   const logout = useCallback(() => {
     setMerchant(null);
-    setStoreSetupComplete(false);
-    // Remove navigation, let the component handle it
-  }, []);
-
-  const switchAccount = useCallback((accountId: string) => {
-    setMerchant(prev => prev ? {
-      ...prev,
-      id: accountId,
-      storeName: `Store ${accountId}`,
-    } : null);
-  }, []);
-
-  const completeStoreSetup = useCallback(() => {
-    setStoreSetupComplete(true);
-    // Remove navigation, let the component handle it
+    setCurrentStore(null);
   }, []);
 
   const value: AuthContextType = {
     merchant,
+    currentStore,
     login,
     logout,
-    switchAccount,
-    completeStoreSetup,
-    storeSetupComplete,
-    isAuthenticated: !!merchant
+    switchStore,
+    isAuthenticated: !!merchant,
+    refreshStores,
+    loading
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

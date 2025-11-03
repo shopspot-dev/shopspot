@@ -42,4 +42,4 @@ export interface SupabaseCategory {
   store_id: string;
   name: string;
   created_at: string;
-} 
+}  

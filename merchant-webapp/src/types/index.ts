@@ -1,3 +1,7 @@
+// =========================================
+// TYPE INTERFACES
+// =========================================
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -62,3 +66,48 @@ export interface StoreSettings {
   taxRate: number;
   currency: string;
 }
+
+// =========================================
+// CONSTANTS
+// =========================================
+
+export const ORDER_STATUS = {
+  PENDING: 'pending',
+  PREPARING: 'preparing',
+  READY: 'ready',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
+} as const;
+
+export const USER_ROLES = {
+  ADMIN: 'admin',
+  STAFF: 'staff',
+  VIEWER: 'viewer',
+} as const;
+
+export const ROLE_PERMISSIONS = {
+  admin: {
+    canManageUsers: true,
+    canManageMenu: true,
+    canManageOrders: true,
+    canViewAnalytics: true,
+    canManageSettings: true,
+    canManagePayments: true,
+  },
+  staff: {
+    canManageUsers: false,
+    canManageMenu: true,
+    canManageOrders: true,
+    canViewAnalytics: true,
+    canManageSettings: false,
+    canManagePayments: false,
+  },
+  viewer: {
+    canManageUsers: false,
+    canManageMenu: false,
+    canManageOrders: false,
+    canViewAnalytics: true,
+    canManageSettings: false,
+    canManagePayments: false,
+  },
+} as const;
